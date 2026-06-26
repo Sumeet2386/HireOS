@@ -1,1 +1,41 @@
+# Redrob AI Candidate Ranking System
+# ====================================
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Pre-computed artifacts (too large for GitHub)
 redrob-ranker/artifacts/
+
+# Environment
+.env
+.venv/
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit API keys
+*.key
+*.secret
+
+# Data files (too large)
+*.jsonl
+
+# Challenge folder
+\[PUB\] India_runs_data_and_ai_challenge/
