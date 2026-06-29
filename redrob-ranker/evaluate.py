@@ -36,12 +36,7 @@ from ranker.honeypot import detect_honeypot
 from ranker.validator import validate_submission
 
 
-CANDIDATES_PATH = (
-    r"d:\Hackathons\Data Challenge IndiaRuns"
-    r"\[PUB] India_runs_data_and_ai_challenge"
-    r"\[PUB] India_runs_data_and_ai_challenge"
-    r"\India_runs_data_and_ai_challenge\candidates.jsonl"
-)
+CANDIDATES_PATH = str(ROOT.parent / "India_runs_data_and_ai_challenge" / "candidates.jsonl")
 SUBMISSION_CSV = ROOT / "final_submission.csv"
 ARTIFACTS_DIR = ROOT / "artifacts"
 

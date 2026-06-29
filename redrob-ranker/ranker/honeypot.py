@@ -225,9 +225,10 @@ def check_keyword_stuffer(candidate: dict[str, Any]) -> list[str]:
 
     # Count AI-relevant skills
     ai_skill_count = 0
+    import re
     for skill in skills:
         name = (skill.get("name") or "").lower()
-        if name in CORE_AI_SKILLS or any(term in name for term in ("ml", "ai", "deep learning", "nlp", "neural")):
+        if name in CORE_AI_SKILLS or re.search(r'\b(?:ml|ai|deep learning|nlp|neural)\b', name):
             ai_skill_count += 1
 
     if ai_skill_count < 3:

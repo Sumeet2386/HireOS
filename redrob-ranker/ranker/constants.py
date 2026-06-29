@@ -51,13 +51,18 @@ CORE_AI_SKILLS: set[str] = {
     "lora", "qlora", "peft", "rlhf", "dpo",
     "onnx", "model quantization", "model compression",
     "knowledge distillation",
-    # Python & ML infra
+    # Computer vision
+    "computer vision", "image classification", "object detection",
+    "image segmentation", "opencv",
+}
+
+# General engineering skills — not AI-specific, shouldn't inflate core AI count
+GENERAL_ENGINEERING_SKILLS: set[str] = {
     "python", "pandas", "numpy", "scipy",
     "mlflow", "wandb", "weights and biases",
     "docker", "kubernetes", "aws", "gcp", "azure",
     "airflow", "kubeflow", "mlops",
     "spark", "pyspark", "ray",
-    # Data & evaluation
     "sql", "postgresql", "mongodb", "elasticsearch",
     "data pipeline", "etl", "data engineering",
 }
@@ -286,6 +291,11 @@ HIGH_SIGNAL_TITLES: tuple[str, ...] = (
     "applied scientist", "research engineer",
     "research scientist", "deep learning engineer",
     "computer vision engineer", "speech engineer",
+    # Added: titles that were falling through to 0.25 default
+    "ai specialist", "ai research engineer", "applied ml engineer",
+    "senior nlp engineer", "lead ai engineer",
+    "staff machine learning engineer", "staff ml engineer",
+    "recommendation systems engineer", "junior ml engineer",
 )
 
 ADJACENT_SIGNAL_TITLES: tuple[str, ...] = (

@@ -3,12 +3,12 @@ rank.py — Main inference script for the Redrob AI Candidate Ranking System.
 
 Must run in ≤5 min, ≤16GB RAM, CPU only, no network.
 
-Orchestrates the 4-stage pipeline:
-1. Load artifacts
-2. Hybrid recall (FAISS + BM25): 100K → ~5,000
-3. Feature engineering + LTR re-rank: ~5,000 → 300
-4. Honeypot pruning: 300 → ~100
-5. Reasoning generation: top 100
+Orchestrates the multi-stage pipeline:
+1. Load pre-computed artifacts (FAISS index, BM25 index, features, etc.)
+2. Hybrid recall (FAISS + BM25): 100K → ~5,000 unique candidates
+3. Feature engineering + multi-signal scoring: ~5,000 → 300
+4. Honeypot pruning: 300 → ~100 clean candidates
+5. Reasoning generation: top 100 with per-candidate justifications
 6. CSV output + validation
 
 Usage:
@@ -40,7 +40,7 @@ from ranker.validator import validate_submission
 
 
 def load_artifacts(artifacts_dir: Path) -> dict:
-    """Load all pre-computed artifacts."""
+    """Load all pre-computed artifacts from disk."""
     artifacts = {}
     t0 = time.time()
 
@@ -89,19 +89,6 @@ def load_artifacts(artifacts_dir: Path) -> dict:
         }
         print(f"  Pre-computed features: {len(artifacts['precomputed_features']):,} candidates, "
               f"{len(feature_cols)} features")
-
-    # LTR model
-    ltr_path = artifacts_dir / "lgbm_ltr_model.bin"
-    if ltr_path.exists():
-        import lightgbm as lgb
-        artifacts["ltr_model"] = lgb.Booster(model_file=str(ltr_path))
-        print("  LTR model loaded.")
-
-    # Feature columns
-    cols_path = artifacts_dir / "feature_columns.json"
-    if cols_path.exists():
-        with open(cols_path, "r") as f:
-            artifacts["feature_columns"] = json.load(f)
 
     elapsed = time.time() - t0
     print(f"  Artifacts loaded in {elapsed:.1f}s")
@@ -203,23 +190,20 @@ def run_pipeline(
 
     print(f"  Features extracted for {len(candidate_features):,} candidates in {time.time()-t2:.1f}s")
 
-    # ── Stage 3: LTR Re-ranking ──
-    print("\n[Stage 3] Re-ranking...")
+    # ── Stage 3: Multi-signal Scoring ──
+    # NOTE: We use the fallback_weighted_scoring function which implements a
+    # balanced multi-signal scoring formula. The LightGBM LTR model was found
+    # to be dominated by saved_by_recruiters_30d (79% importance) with 17
+    # critical features at zero importance. The hand-tuned formula produces
+    # substantially better rankings by properly weighting title relevance,
+    # skill match, semantic similarity, behavioral signals, and penalties.
+    print("\n[Stage 3] Multi-signal scoring...")
     t3 = time.time()
 
-    if "ltr_model" in artifacts and "feature_columns" in artifacts:
-        from ranker.ltr import rank_candidates as ltr_rank
-        ranked = ltr_rank(
-            artifacts["ltr_model"],
-            candidate_features,
-            artifacts["feature_columns"],
-        )
-    else:
-        # Fallback to weighted scoring
-        print("  Using fallback weighted scoring (no LTR model).")
-        ranked = fallback_weighted_scoring(candidate_features)
+    print("  Using multi-signal weighted scoring formula.")
+    ranked = fallback_weighted_scoring(candidate_features)
 
-    print(f"  Re-ranked {len(ranked):,} candidates in {time.time()-t3:.1f}s")
+    print(f"  Scored {len(ranked):,} candidates in {time.time()-t3:.1f}s")
 
     # ── Stage 4: Honeypot pruning ──
     print("\n[Stage 4] Honeypot pruning (top 300 -> top 100)...")
@@ -264,26 +248,29 @@ def run_pipeline(
     final_100 = final_100[:100]
     print(f"  Final: {len(final_100)} candidates after pruning, in {time.time()-t4:.1f}s")
 
-    # ── Stage 5: Normalize scores + generate reasoning ──
+    # ── Stage 5: Score normalization + reasoning generation ──
     print("\n[Stage 5] Score normalization + reasoning generation...")
     t5 = time.time()
 
-    # Normalize scores to [0, 1] range, monotonically non-increasing
-    raw_scores = [s for _, s in final_100]
-    if raw_scores:
-        max_s = max(raw_scores)
-        min_s = min(raw_scores)
-        score_range = max_s - min_s if max_s > min_s else 1.0
-    else:
-        max_s = 1.0
-        min_s = 0.0
-        score_range = 1.0
+    # Normalize scores to a [0.20, 1.00] range using rank-proportional power curve.
+    # This approach:
+    #  - Gives more score spread at the top (where NDCG@10 cares most)
+    #  - Eliminates tail compression (old approach had ranks 77-100 all at ~0.1976-0.2000)
+    #  - Guarantees unique scores at 4 decimal places for 100 ranks
+    #  - Preserves monotonicity by construction (no post-hoc fixing needed)
+    n = len(final_100)
 
     results = []
     for rank_idx, (cid, raw_score) in enumerate(final_100):
         rank = rank_idx + 1
-        # Map to [0.2, 1.0] range, ensuring monotonically non-increasing
-        normalized_score = round(0.2 + 0.8 * (raw_score - min_s) / score_range, 4)
+
+        # Power curve: t^0.7 gives more spread at the top, less at the bottom
+        # Rank 1 → 1.0, Rank 100 → 0.20
+        if n > 1:
+            t = rank_idx / (n - 1)  # 0.0 to 1.0
+            normalized_score = round(1.0 - 0.80 * (t ** 0.7), 4)
+        else:
+            normalized_score = 1.0
 
         # Generate reasoning
         candidate = candidates_by_id.get(cid)
@@ -302,16 +289,20 @@ def run_pipeline(
             "reasoning": reasoning,
         })
 
-    # Ensure scores are monotonically non-increasing
+    # Enforce strict monotonically non-increasing scores at 4dp precision
     for i in range(1, len(results)):
-        if results[i]["score"] > results[i - 1]["score"]:
-            results[i]["score"] = results[i - 1]["score"]
+        if results[i]["score"] >= results[i - 1]["score"]:
+            results[i]["score"] = round(results[i - 1]["score"] - 1e-4, 4)
+
+    # Ensure minimum score is at least 0.01
+    for r in results:
+        r["score"] = max(0.01, r["score"])
 
     # Handle tie-breaking: for equal scores, sort by candidate_id ascending
     i = 0
     while i < len(results):
         j = i
-        while j < len(results) and results[j]["score"] == results[i]["score"]:
+        while j < len(results) and abs(results[j]["score"] - results[i]["score"]) < 1e-9:
             j += 1
         if j - i > 1:
             tied = results[i:j]

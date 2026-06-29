@@ -172,7 +172,10 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
     skill_names_lower = [(s.get("name") or "").lower() for s in skills]
     core_ai_count = sum(
         1 for name in skill_names_lower
-        if name in CORE_AI_SKILLS or any(term in name for term in CORE_AI_SKILLS if len(term) > 3)
+        if name in CORE_AI_SKILLS or any(
+            term in name for term in CORE_AI_SKILLS 
+            if len(term) > 3 or term in ("nlp", "rag", "cv", "ocr", "tts")
+        )
     )
 
     # High-signal skill count
@@ -188,7 +191,10 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
     relevant_proficiencies = []
     for skill in skills:
         name = (skill.get("name") or "").lower()
-        if name in CORE_AI_SKILLS or any(term in name for term in CORE_AI_SKILLS if len(term) > 3):
+        if name in CORE_AI_SKILLS or any(
+            term in name for term in CORE_AI_SKILLS 
+            if len(term) > 3 or term in ("nlp", "rag", "cv", "ocr", "tts")
+        ):
             prof = proficiency_map.get(skill.get("proficiency", "beginner"), 0.25)
             relevant_proficiencies.append(prof)
     skill_proficiency_score = (
@@ -265,6 +271,7 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
         "num_high_signal_skills": float(high_signal_count),
         "skill_proficiency_score": skill_proficiency_score,
         "skill_text_entailment_rate": entailment_rate,
+        "num_advanced_expert_skills": float(len(advanced_skills)),
         "assessment_trust_penalty": _clip(trust_penalty, 0.0, 1.0),
         "num_assessments_taken": float(assessment_count),
         "has_embedding_skills": has_embedding_skills,
@@ -297,10 +304,22 @@ def extract_behavioral_features(candidate: dict[str, Any]) -> dict[str, float]:
     avg_response_hours = signals.get("avg_response_time_hours", 72)
     response_time_score = _clip(1.0 - (avg_response_hours / 168.0))  # 168h = 1 week
 
-    # Notice period multiplier (logistic decay)
+    # Notice period — piecewise linear aligned with JD language
+    # JD: "Sub-30 preferred. Can buy out up to 30 days. 30+ still in scope."
     notice_days = signals.get("notice_period_days", 0)
-    notice_multiplier = 1.0 / (1.0 + math.exp(0.05 * (notice_days - 45)))
-    # 0 days → ~1.0, 30 days → ~0.68, 60 days → ~0.32, 90 days → ~0.09
+    if notice_days <= 30:
+        notice_multiplier = 1.0                                       # JD-preferred
+    elif notice_days <= 45:
+        notice_multiplier = 1.0 - 0.005 * (notice_days - 30)         # 45d → 0.925
+    elif notice_days <= 60:
+        notice_multiplier = 0.925 - 0.005 * (notice_days - 45)       # 60d → 0.85
+    elif notice_days <= 90:
+        notice_multiplier = 0.85 - 0.005 * (notice_days - 60)        # 90d → 0.70
+    elif notice_days <= 120:
+        notice_multiplier = 0.70 - 0.005 * (notice_days - 90)        # 120d → 0.55
+    else:
+        notice_multiplier = max(0.3, 0.55 - 0.003 * (notice_days - 120))
+    # 0d→1.0, 30d→1.0, 45d→0.925, 60d→0.85, 90d→0.70, 120d→0.55
 
     # Open to work (binary)
     open_to_work = 1.0 if signals.get("open_to_work_flag", False) else 0.0
@@ -382,13 +401,14 @@ def extract_location_features(candidate: dict[str, Any]) -> dict[str, float]:
     willing = 1.0 if willing_to_relocate else 0.0
     work_mode_compatible = 1.0 if work_mode in ("hybrid", "onsite", "flexible") else 0.5
 
-    # Composite location score
+    # Composite location score — softened for international candidates
+    # JD: "Outside India: case-by-case, no visa sponsorship" (not "strongly penalize")
     if is_india and is_tier1_india:
         location_fit = 1.0
     elif is_india:
-        location_fit = 0.82 if willing_to_relocate else 0.72
+        location_fit = 0.85 if willing_to_relocate else 0.75
     else:
-        location_fit = 0.68 if willing_to_relocate else 0.32
+        location_fit = 0.70 if willing_to_relocate else 0.50
 
     return {
         "is_india": is_india,
@@ -423,5 +443,6 @@ def extract_all_features(candidate: dict[str, Any]) -> dict[str, float]:
     is_honeypot, honeypot_flags = detect_honeypot(candidate)
     features["is_honeypot"] = 1.0 if is_honeypot else 0.0
     features["honeypot_flag_count"] = float(len(honeypot_flags))
+    features["has_maturity_impossible"] = 1.0 if any(f.startswith("MATURITY_IMPOSSIBLE") for f in honeypot_flags) else 0.0
 
     return features

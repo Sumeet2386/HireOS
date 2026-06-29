@@ -9,7 +9,7 @@ from ranker.features import extract_all_features
 from ranker.honeypot import detect_honeypot
 from ranker.reasoning import build_template_reasoning
 
-SAMPLE_PATH = Path(r"d:\Hackathons\Data Challenge IndiaRuns\[PUB] India_runs_data_and_ai_challenge\[PUB] India_runs_data_and_ai_challenge\India_runs_data_and_ai_challenge\sample_candidates.json")
+SAMPLE_PATH = Path(__file__).resolve().parent.parent / "India_runs_data_and_ai_challenge" / "sample_candidates.json"
 
 data = json.load(open(SAMPLE_PATH, encoding="utf-8"))
 
