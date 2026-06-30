@@ -12,7 +12,15 @@ primary_contact:
 team_members:
   - name: "Harshal Andhale"
     email: "harshalandhale9@gmail.com"
-    role: "ML Engineer"
+    role: "AI/ML Engineer & Ranking Architect"
+
+  - name: "Sumeet Gite"
+    email: "sumeetgite23@gmail.com"
+    role: "Data Engineer & Backend Developer"
+
+  - name: "Prem More"
+    email: "premmore@gmail.com"
+    role: "LLM, Evaluation & DevOps Engineer"
 
 # ============================================================================
 # Code and reproducibility
