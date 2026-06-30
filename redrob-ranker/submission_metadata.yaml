@@ -2,16 +2,16 @@
 # ============================================================================
 # Team identity
 # ============================================================================
-team_name: "REPLACE_WITH_YOUR_TEAM_NAME"
+team_name: "Discern"
 
 primary_contact:
-  name: "REPLACE_WITH_YOUR_NAME"
-  email: "REPLACE@example.com"
-  phone: "+91-XXXXXXXXXX"
+  name: "Sumeet Gite"
+  email: "sumeetgite23@gmail.com"
+  phone: "+91-8511743176"
 
 team_members:
-  - name: "REPLACE_WITH_YOUR_NAME"
-    email: "REPLACE@example.com"
+  - name: "Harshal Andhale"
+    email: "harshalandhale9@gmail.com"
     role: "ML Engineer"
 
 # ============================================================================
