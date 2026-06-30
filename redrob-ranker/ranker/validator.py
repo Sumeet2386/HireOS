@@ -2,9 +2,10 @@
 Output CSV validation for the Redrob submission format.
 
 Ensures:
+
 - Exactly 100 data rows + 1 header
 - Columns: candidate_id, rank, score, reasoning
-- candidate_id matches CAND_XXXXXXX pattern
+- candidate_id matches ``CAND_XXXXXXX`` pattern
 - Ranks 1-100 unique, scores monotonically non-increasing
 - Tie-breaking: candidate_id ascending for equal scores
 """
@@ -12,9 +13,11 @@ Ensures:
 from __future__ import annotations
 
 import csv
+import logging
 import re
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
 
 REQUIRED_HEADER = ["candidate_id", "rank", "score", "reasoning"]
 CANDIDATE_ID_PATTERN = re.compile(r"^CAND_[0-9]{7}$")
@@ -22,10 +25,17 @@ EXPECTED_DATA_ROWS = 100
 
 
 def validate_submission(csv_path: str | Path) -> list[str]:
-    """
-    Validate a submission CSV file.
+    """Validate a submission CSV file.
 
-    Returns a list of error strings. Empty list = valid.
+    Parameters
+    ----------
+    csv_path : str or Path
+        Path to the submission CSV file.
+
+    Returns
+    -------
+    list[str]
+        List of error strings. An empty list indicates a valid submission.
     """
     errors: list[str] = []
     path = Path(csv_path)
@@ -34,13 +44,13 @@ def validate_submission(csv_path: str | Path) -> list[str]:
         errors.append("Filename must use a .csv extension.")
 
     try:
-        with open(path, "r", encoding="utf-8", newline="") as f:
-            reader = csv.reader(f)
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            reader = csv.reader(fh)
 
             try:
                 header = next(reader)
             except StopIteration:
-                errors.append("File is empty — must have header + 100 rows.")
+                errors.append("File is empty -- must have header + 100 rows.")
                 return errors
 
             if header != REQUIRED_HEADER:
@@ -57,8 +67,8 @@ def validate_submission(csv_path: str | Path) -> list[str]:
     except UnicodeDecodeError:
         errors.append("File must be UTF-8 encoded.")
         return errors
-    except OSError as e:
-        errors.append(f"Cannot read file: {e}")
+    except OSError as exc:
+        errors.append(f"Cannot read file: {exc}")
         return errors
 
     n = len(data_rows)
@@ -89,6 +99,7 @@ def validate_submission(csv_path: str | Path) -> list[str]:
             seen_ids.add(cid)
 
         # Validate rank
+        rank: int | None = None
         try:
             rank = int(rank_s)
             if not 1 <= rank <= 100:
@@ -99,14 +110,13 @@ def validate_submission(csv_path: str | Path) -> list[str]:
                 seen_ranks.add(rank)
         except ValueError:
             errors.append(f"Row {row_num}: rank must be integer, got '{rank_s}'.")
-            rank = None
 
         # Validate score
+        score: float | None = None
         try:
             score = float(score_s)
         except ValueError:
             errors.append(f"Row {row_num}: score must be float, got '{score_s}'.")
-            score = None
 
         if rank is not None and score is not None:
             by_rank.append((rank, score, cid))
@@ -130,5 +140,10 @@ def validate_submission(csv_path: str | Path) -> list[str]:
                 f"Tie-break: equal scores at ranks {r1},{r2} require "
                 f"candidate_id ascending ({c1} > {c2})."
             )
+
+    if errors:
+        logger.warning("Submission validation found %d error(s)", len(errors))
+    else:
+        logger.info("Submission validation passed")
 
     return errors

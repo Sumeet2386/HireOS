@@ -1,13 +1,14 @@
 """
 Reference constants for the Redrob AI Candidate Ranking System.
 
-All lookup tables, skill lists, company sets, city maps, and tech release dates
-used across the ranking pipeline. Centralised here so every module pulls from
-one source of truth.
+All lookup tables, skill lists, company sets, city maps, tech release dates,
+pipeline configuration, and scoring weights used across the ranking pipeline.
+Centralised here so every module pulls from one source of truth.
 """
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import date
 
 # ---------------------------------------------------------------------------
@@ -430,3 +431,109 @@ NEGATIVE_TITLE_PATTERNS: tuple[str, ...] = (
     "doctor", "physician", "nurse",
     "chef", "cook", "driver",
 )
+
+# ---------------------------------------------------------------------------
+# Canonical JD query text (single source of truth)
+# ---------------------------------------------------------------------------
+JD_QUERY_TEXT: str = (
+    "Senior AI Engineer for a founding team building an AI-powered talent "
+    "intelligence platform. Must have production experience with embeddings, "
+    "semantic search, retrieval systems, ranking and recommendation systems, "
+    "vector databases (FAISS, Pinecone, Weaviate), NLP, transformers, and "
+    "evaluation frameworks (NDCG, MRR, MAP). Looking for a shipper over a "
+    "researcher -- someone who builds, deploys, and iterates in production. "
+    "Ideal candidate has 5-9 years of experience, works with Python, PyTorch "
+    "or TensorFlow, and has shipped ML/AI systems in product companies. "
+    "India-based preferred (Pune, Noida, Hyderabad, Mumbai, Delhi NCR). "
+    "Red flags: pure consulting career, title chaser, no recent coding, "
+    "superficial AI keywords."
+)
+
+JD_BM25_KEYWORDS: str = (
+    "senior AI engineer embeddings retrieval ranking recommendation "
+    "vector database semantic search NLP transformers production "
+    "Python PyTorch deployment evaluation NDCG"
+)
+
+# ---------------------------------------------------------------------------
+# Pipeline configuration (replaces scattered magic numbers)
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class PipelineConfig:
+    """Immutable configuration for recall and pruning parameters."""
+
+    k_dense: int = 5000
+    k_sparse: int = 500
+    top_n_for_pruning: int = 300
+    final_output_size: int = 100
+    dense_weight: float = 0.7
+    sparse_weight: float = 0.3
+    score_range_min: float = 0.20
+    score_range_max: float = 1.00
+    score_curve_exponent: float = 0.7
+    min_score_floor: float = 0.01
+
+
+PIPELINE_CONFIG = PipelineConfig()
+
+
+# ---------------------------------------------------------------------------
+# Scoring weights (replaces inline literals in ltr.py)
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class ScoringWeights:
+    """Weights for the multi-signal additive scoring formula.
+
+    All group weights sum to 1.0.  Individual sub-weights within each
+    group are defined as class attributes with clear names.
+    """
+
+    # Top-level group weights
+    core_fit: float = 0.50
+    semantic: float = 0.20
+    behavioral: float = 0.17
+    availability: float = 0.07
+    location: float = 0.06
+
+    # Core-fit sub-weights
+    title_weight: float = 0.22
+    yoe_weight: float = 0.18
+    skill_match_weight: float = 0.15
+    skill_quality_weight: float = 0.25
+    company_weight: float = 0.20
+
+    # Penalty thresholds
+    honeypot_penalty: float = 0.95
+    maturity_impossible_penalty: float = 0.20
+    fictional_company_penalty: float = 0.30
+    keyword_stuffer_penalty: float = 0.25
+    all_consulting_penalty: float = 0.08
+    title_chaser_penalty: float = 0.05
+
+    # Skill match saturation
+    high_signal_skill_saturation: float = 6.0
+    skill_match_bonus_per_skill: float = 0.04
+    skill_match_bonus_cap: float = 0.25
+
+
+SCORING_WEIGHTS = ScoringWeights()
+
+
+# ---------------------------------------------------------------------------
+# Pre-built synonym reverse lookup (O(1) instead of O(n*m) per query)
+# ---------------------------------------------------------------------------
+SYNONYM_REVERSE_LOOKUP: dict[str, set[str]] = {}
+
+for _key, _synonyms in SKILL_SYNONYMS.items():
+    _all_terms = {_key} | set(_synonyms)
+    for _term in _all_terms:
+        if _term not in SYNONYM_REVERSE_LOOKUP:
+            SYNONYM_REVERSE_LOOKUP[_term] = set()
+        SYNONYM_REVERSE_LOOKUP[_term].update(_all_terms)
+
+# Clean up module namespace
+del _key, _synonyms, _all_terms, _term

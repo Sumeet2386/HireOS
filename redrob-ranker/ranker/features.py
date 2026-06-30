@@ -4,7 +4,7 @@ Feature engineering for the Redrob AI Candidate Ranking System.
 Extracts ~40 structured features from raw candidate JSON for use by the
 LightGBM LTR model. Features span 6 categories:
 
-1. Semantic (cosine similarity, BM25 — computed online, stubs here)
+1. Semantic (cosine similarity, BM25 -- computed online, stubs here)
 2. Structural (YoE, tenure, title relevance, company type)
 3. Skill (core AI skill count, proficiency, entailment rate, assessment gap)
 4. Behavioral (activity decay, response rate, notice period, etc.)
@@ -14,15 +14,14 @@ LightGBM LTR model. Features span 6 categories:
 
 from __future__ import annotations
 
+import logging
 import math
-from datetime import date, datetime
 from typing import Any
 
 from .constants import (
     ADJACENT_SIGNAL_TITLES,
     CONSULTING_FIRMS,
     CORE_AI_SKILLS,
-    FICTIONAL_COMPANIES,
     HIGH_SIGNAL_SKILLS,
     HIGH_SIGNAL_TITLES,
     NEGATIVE_TITLE_PATTERNS,
@@ -30,51 +29,46 @@ from .constants import (
     PRODUCT_BRANDS,
     PRODUCT_INDUSTRY_KEYWORDS,
     REFERENCE_DATE,
-    SKILL_SYNONYMS,
-    TECH_RELEASE_YEARS,
+    SYNONYM_REVERSE_LOOKUP,
     TIER1_INDIA_CITIES,
 )
 from .honeypot import detect_honeypot
+from .utils import (
+    clip,
+    compute_notice_score,
+    extract_honeypot_flag_features,
+    fuzzy_match,
+    parse_date,
+)
+
+logger = logging.getLogger(__name__)
 
 
-def _parse_date(value: str | None) -> date | None:
-    if not value:
-        return None
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except (ValueError, TypeError):
-        return None
-
-
-def _clip(value: float, low: float = 0.0, high: float = 1.0) -> float:
-    return max(low, min(high, value))
-
-
-def _fuzzy_match(company_name: str, known_set: set[str]) -> bool:
-    """Check if a company name matches any known company (case-insensitive, fuzzy)."""
-    name = company_name.lower().strip()
-    if name in known_set:
-        return True
-    # Check if any known name is a substring or vice versa
-    for known in known_set:
-        if known in name or name in known:
-            return True
-    return False
-
-
-# ──────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # Feature extraction functions
-# ──────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+
 
 def extract_structural_features(candidate: dict[str, Any]) -> dict[str, float]:
-    """Extract structural / career features."""
+    """Extract structural / career features.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    dict[str, float]
+        Dictionary of structural feature values.
+    """
     profile = candidate.get("profile", {})
     career = candidate.get("career_history", [])
 
     yoe = profile.get("years_of_experience", 0.0)
 
     # YoE ideal range: peaks at 7, smooth decay outside 5-9
-    yoe_in_ideal_range = _clip(max(0.0, 1.0 - 0.15 * abs(yoe - 7.0)))
+    yoe_in_ideal_range = clip(max(0.0, 1.0 - 0.15 * abs(yoe - 7.0)))
 
     # Number of career entries
     num_career_entries = len(career)
@@ -100,8 +94,8 @@ def extract_structural_features(candidate: dict[str, Any]) -> dict[str, float]:
     companies = [(job.get("company") or "").lower() for job in career]
     industries = [(job.get("industry") or "").lower() for job in career]
 
-    consulting_count = sum(1 for c in companies if _fuzzy_match(c, CONSULTING_FIRMS))
-    product_count = sum(1 for c in companies if _fuzzy_match(c, PRODUCT_BRANDS))
+    consulting_count = sum(1 for c in companies if fuzzy_match(c, CONSULTING_FIRMS))
+    product_count = sum(1 for c in companies if fuzzy_match(c, PRODUCT_BRANDS))
     product_industry_count = sum(
         1 for ind in industries
         if any(kw in ind for kw in PRODUCT_INDUSTRY_KEYWORDS)
@@ -116,10 +110,10 @@ def extract_structural_features(candidate: dict[str, Any]) -> dict[str, float]:
         "501-1000": 750, "1001-5000": 3000, "5001-10000": 7500, "10001+": 15000,
     }
     current_company_size = size_map.get(profile.get("current_company_size", ""), 5000)
-    startup_fit = _clip(1.0 - (current_company_size - 50) / 15000)
+    startup_fit = clip(1.0 - (current_company_size - 50) / 15000)
 
     # Tenure stability score
-    tenure_fit = _clip(avg_tenure_months / 36.0) if avg_tenure_months > 0 else 0.5
+    tenure_fit = clip(avg_tenure_months / 36.0) if avg_tenure_months > 0 else 0.5
 
     return {
         "years_of_experience": yoe,
@@ -139,7 +133,18 @@ def extract_structural_features(candidate: dict[str, Any]) -> dict[str, float]:
 
 
 def _compute_title_relevance(title_lower: str) -> float:
-    """Score how relevant a title is to the JD."""
+    """Score how relevant a title is to the JD.
+
+    Parameters
+    ----------
+    title_lower : str
+        Lowercased job title string.
+
+    Returns
+    -------
+    float
+        Relevance score in [0.1, 1.0].
+    """
     if any(t in title_lower for t in HIGH_SIGNAL_TITLES):
         return 1.0
     if any(t in title_lower for t in ADJACENT_SIGNAL_TITLES):
@@ -154,7 +159,18 @@ def _compute_title_relevance(title_lower: str) -> float:
 
 
 def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
-    """Extract skill-related features."""
+    """Extract skill-related features.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    dict[str, float]
+        Dictionary of skill feature values.
+    """
     skills = candidate.get("skills", [])
     career = candidate.get("career_history", [])
     profile = candidate.get("profile", {})
@@ -174,7 +190,7 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
     core_ai_count = sum(
         1 for name in skill_names_lower
         if name in CORE_AI_SKILLS or any(
-            term in name for term in CORE_AI_SKILLS 
+            term in name for term in CORE_AI_SKILLS
             if len(term) > 3 or term in ("nlp", "rag", "cv", "ocr", "tts")
         )
     )
@@ -193,7 +209,7 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
     for skill in skills:
         name = (skill.get("name") or "").lower()
         if name in CORE_AI_SKILLS or any(
-            term in name for term in CORE_AI_SKILLS 
+            term in name for term in CORE_AI_SKILLS
             if len(term) > 3 or term in ("nlp", "rag", "cv", "ocr", "tts")
         ):
             prof = proficiency_map.get(skill.get("proficiency", "beginner"), 0.25)
@@ -203,7 +219,7 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
         if relevant_proficiencies else 0.0
     )
 
-    # Skill-text entailment rate
+    # Skill-text entailment rate (uses pre-built reverse lookup)
     advanced_skills = [
         s for s in skills
         if s.get("proficiency") in ("advanced", "expert")
@@ -211,12 +227,13 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
     entailed = 0
     for s in advanced_skills:
         name = (s.get("name") or "").lower()
-        if name in career_text or any(
-            syn in career_text
-            for key, syns in SKILL_SYNONYMS.items()
-            if name == key or name in syns
-            for syn in syns
-        ):
+        # Check direct mention
+        if name in career_text:
+            entailed += 1
+            continue
+        # Check synonyms via pre-built reverse lookup
+        related = SYNONYM_REVERSE_LOOKUP.get(name)
+        if related and any(term in career_text for term in related):
             entailed += 1
     entailment_rate = entailed / max(1, len(advanced_skills))
 
@@ -232,36 +249,38 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
             claimed = claimed_map.get(skill.get("proficiency", "beginner"), 25)
             actual = assessments[skill_name]
             gap = claimed - actual
-            if gap > 30:  # Claims advanced but scores < 45
+            if gap > 30:
                 trust_penalty += 0.1
 
-    # Specific skill category flags
+    # Specific skill category flags -- compute joined text once
+    all_skills_text = " ".join(skill_names_lower)
+
     has_embedding_skills = 1.0 if any(
-        term in " ".join(skill_names_lower)
+        term in all_skills_text
         for term in ("sentence-transformer", "sentence transformer", "bge", "e5",
                       "embedding", "word2vec", "dense retrieval")
     ) else 0.0
 
     has_vector_db_skills = 1.0 if any(
-        term in " ".join(skill_names_lower)
+        term in all_skills_text
         for term in ("faiss", "pinecone", "weaviate", "qdrant", "milvus",
                       "chroma", "vector database", "vector db")
     ) else 0.0
 
     has_evaluation_skills = 1.0 if any(
-        term in " ".join(skill_names_lower)
+        term in all_skills_text
         for term in ("ndcg", "mrr", "map", "a/b testing", "ab testing",
                       "evaluation", "ranking metric")
     ) else 0.0
 
     has_nlp_ir_skills = 1.0 if any(
-        term in " ".join(skill_names_lower)
+        term in all_skills_text
         for term in ("nlp", "natural language", "information retrieval",
                       "search", "retrieval", "bert", "transformers")
     ) else 0.0
 
     has_llm_skills = 1.0 if any(
-        term in " ".join(skill_names_lower)
+        term in all_skills_text
         for term in ("llm", "large language", "fine-tun", "finetuning",
                       "langchain", "llamaindex", "prompt engineering",
                       "gpt", "chatgpt", "lora", "qlora", "rag")
@@ -273,7 +292,7 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
         "skill_proficiency_score": skill_proficiency_score,
         "skill_text_entailment_rate": entailment_rate,
         "num_advanced_expert_skills": float(len(advanced_skills)),
-        "assessment_trust_penalty": _clip(trust_penalty, 0.0, 1.0),
+        "assessment_trust_penalty": clip(trust_penalty, 0.0, 1.0),
         "num_assessments_taken": float(assessment_count),
         "has_embedding_skills": has_embedding_skills,
         "has_vector_db_skills": has_vector_db_skills,
@@ -285,42 +304,40 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
 
 
 def extract_behavioral_features(candidate: dict[str, Any]) -> dict[str, float]:
-    """Extract behavioral / engagement features from Redrob signals."""
+    """Extract behavioral / engagement features from Redrob signals.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    dict[str, float]
+        Dictionary of behavioral feature values.
+    """
     signals = candidate.get("redrob_signals", {})
 
     # Activity decay (exponential)
-    last_active = _parse_date(signals.get("last_active_date"))
+    last_active = parse_date(signals.get("last_active_date"))
     if last_active:
         days_inactive = max(0, (REFERENCE_DATE - last_active).days)
     else:
         days_inactive = 365  # Assume very inactive
 
     activity_decay = math.exp(-0.005 * days_inactive)
-    # 0 days → 1.0, 30 days → 0.86, 90 days → 0.64, 180 days → 0.41
+    # 0 days -> 1.0, 30 days -> 0.86, 90 days -> 0.64, 180 days -> 0.41
 
     # Response rate (direct)
     response_rate = signals.get("recruiter_response_rate", 0.0)
 
     # Response time score (inverse, normalized)
     avg_response_hours = signals.get("avg_response_time_hours", 72)
-    response_time_score = _clip(1.0 - (avg_response_hours / 168.0))  # 168h = 1 week
+    response_time_score = clip(1.0 - (avg_response_hours / 168.0))  # 168h = 1 week
 
-    # Notice period — piecewise linear aligned with JD language
-    # JD: "Sub-30 preferred. Can buy out up to 30 days. 30+ still in scope."
+    # Notice period -- use shared piecewise-linear function
     notice_days = signals.get("notice_period_days", 0)
-    if notice_days <= 30:
-        notice_multiplier = 1.0                                       # JD-preferred
-    elif notice_days <= 45:
-        notice_multiplier = 1.0 - 0.005 * (notice_days - 30)         # 45d → 0.925
-    elif notice_days <= 60:
-        notice_multiplier = 0.925 - 0.005 * (notice_days - 45)       # 60d → 0.85
-    elif notice_days <= 90:
-        notice_multiplier = 0.85 - 0.005 * (notice_days - 60)        # 90d → 0.70
-    elif notice_days <= 120:
-        notice_multiplier = 0.70 - 0.005 * (notice_days - 90)        # 120d → 0.55
-    else:
-        notice_multiplier = max(0.3, 0.55 - 0.003 * (notice_days - 120))
-    # 0d→1.0, 30d→1.0, 45d→0.925, 60d→0.85, 90d→0.70, 120d→0.55
+    notice_multiplier = compute_notice_score(float(notice_days))
 
     # Open to work (binary)
     open_to_work = 1.0 if signals.get("open_to_work_flag", False) else 0.0
@@ -331,7 +348,7 @@ def extract_behavioral_features(candidate: dict[str, Any]) -> dict[str, float]:
     # Interview completion rate
     interview_rate = signals.get("interview_completion_rate", 0.0)
 
-    # Offer acceptance rate (handle -1 as unknown → neutral 0.5)
+    # Offer acceptance rate (handle -1 as unknown -> neutral 0.5)
     offer_rate = signals.get("offer_acceptance_rate", -1)
     if offer_rate < 0:
         offer_rate = 0.5
@@ -356,11 +373,11 @@ def extract_behavioral_features(candidate: dict[str, Any]) -> dict[str, float]:
 
     # Connection count (log-scaled, capped)
     connections = signals.get("connection_count", 0)
-    connection_score = _clip(math.log1p(connections) / math.log1p(500))
+    connection_score = clip(math.log1p(connections) / math.log1p(500))
 
     # Endorsements (log-scaled)
     endorsements = signals.get("endorsements_received", 0)
-    endorsement_score = _clip(math.log1p(endorsements) / math.log1p(100))
+    endorsement_score = clip(math.log1p(endorsements) / math.log1p(100))
 
     return {
         "days_since_active": float(days_inactive),
@@ -385,7 +402,18 @@ def extract_behavioral_features(candidate: dict[str, Any]) -> dict[str, float]:
 
 
 def extract_location_features(candidate: dict[str, Any]) -> dict[str, float]:
-    """Extract location-related features."""
+    """Extract location-related features.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    dict[str, float]
+        Dictionary of location feature values.
+    """
     profile = candidate.get("profile", {})
     signals = candidate.get("redrob_signals", {})
 
@@ -402,7 +430,7 @@ def extract_location_features(candidate: dict[str, Any]) -> dict[str, float]:
     willing = 1.0 if willing_to_relocate else 0.0
     work_mode_compatible = 1.0 if work_mode in ("hybrid", "onsite", "flexible") else 0.5
 
-    # Composite location score — softened for international candidates
+    # Composite location score -- softened for international candidates
     # JD: "Outside India: case-by-case, no visa sponsorship" (not "strongly penalize")
     if is_india and is_tier1_india:
         location_fit = 1.0
@@ -421,10 +449,19 @@ def extract_location_features(candidate: dict[str, Any]) -> dict[str, float]:
 
 
 def extract_all_features(candidate: dict[str, Any]) -> dict[str, float]:
-    """
-    Extract ALL features for a single candidate.
+    """Extract ALL features for a single candidate.
 
     Returns a flat dictionary of ~45 features suitable for LightGBM.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    dict[str, float]
+        Flat feature dictionary.
     """
     features: dict[str, float] = {}
 
@@ -440,11 +477,9 @@ def extract_all_features(candidate: dict[str, Any]) -> dict[str, float]:
     # Location
     features.update(extract_location_features(candidate))
 
-    # Honeypot flags
+    # Honeypot flags -- use shared utility for flag classification
     is_honeypot, honeypot_flags = detect_honeypot(candidate)
     features["is_honeypot"] = 1.0 if is_honeypot else 0.0
-    features["honeypot_flag_count"] = float(len(honeypot_flags))
-    features["has_maturity_impossible"] = 1.0 if any(f.startswith("MATURITY_IMPOSSIBLE") for f in honeypot_flags) else 0.0
-    features["has_fictional_company"] = 1.0 if any(f.startswith("FICTIONAL_COMPANY") for f in honeypot_flags) else 0.0
+    features.update(extract_honeypot_flag_features(honeypot_flags))
 
     return features

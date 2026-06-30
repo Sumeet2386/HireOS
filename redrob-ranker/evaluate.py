@@ -1,5 +1,5 @@
 """
-evaluate.py — Comprehensive Evaluation & QA for the Redrob Ranking Pipeline.
+evaluate.py -- Comprehensive Evaluation & QA for the Redrob Ranking Pipeline.
 
 Runs every check we can think of and prints a detailed metrics report.
 """
@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import csv
 import json
-import os
+import logging
 import pickle
-import re
 import sys
 import time
 import tracemalloc
@@ -23,36 +22,29 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from ranker.constants import (
-    CORE_AI_SKILLS,
-    HIGH_SIGNAL_SKILLS,
-    HIGH_SIGNAL_TITLES,
     ADJACENT_SIGNAL_TITLES,
+    HIGH_SIGNAL_TITLES,
+    JD_BM25_KEYWORDS,
+    PIPELINE_CONFIG as CFG,
     TIER1_INDIA_CITIES,
-    CONSULTING_FIRMS,
-    NEGATIVE_TITLE_PATTERNS,
 )
 from ranker.features import extract_all_features
 from ranker.honeypot import detect_honeypot
+from ranker.utils import load_candidates
 from ranker.validator import validate_submission
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 CANDIDATES_PATH = str(ROOT.parent / "India_runs_data_and_ai_challenge" / "candidates.jsonl")
 SUBMISSION_CSV = ROOT / "final_submission.csv"
 ARTIFACTS_DIR = ROOT / "artifacts"
 
 SEP = "=" * 70
-
-
-def load_candidates(path: str) -> dict[str, dict]:
-    candidates = {}
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            c = json.loads(line)
-            candidates[c["candidate_id"]] = c
-    return candidates
 
 
 def load_submission(csv_path: Path) -> list[dict]:
@@ -350,7 +342,7 @@ def main():
     # Feature importance
     fi_path = ARTIFACTS_DIR / "feature_importance.json"
     if fi_path.exists():
-        with open(fi_path) as f:
+        with open(fi_path, encoding="utf-8") as f:
             feat_importance_raw = json.load(f)
         # Handle both dict and list-of-lists formats
         if isinstance(feat_importance_raw, dict):
@@ -372,7 +364,7 @@ def main():
     # Weak labels stats
     wl_path = ARTIFACTS_DIR / "weak_labels.json"
     if wl_path.exists():
-        with open(wl_path) as f:
+        with open(wl_path, encoding="utf-8") as f:
             weak_labels = json.load(f)
         # Detect the score key
         score_key = "weak_label" if "weak_label" in weak_labels[0] else "score"
@@ -429,7 +421,7 @@ def main():
     with open(ARTIFACTS_DIR / "bm25_index.pkl", "rb") as f:
         bm25_index = pickle.load(f)
     jd_embedding = np.load(ARTIFACTS_DIR / "jd_embedding.npy").astype(np.float32)
-    with open(ARTIFACTS_DIR / "id_mapping.json") as f:
+    with open(ARTIFACTS_DIR / "id_mapping.json", encoding="utf-8") as f:
         id_mapping = {int(k): v for k, v in json.load(f).items()}
     feat_table = pq.read_table(ARTIFACTS_DIR / "features.parquet")
     feat_pydict = feat_table.to_pydict()
@@ -440,7 +432,7 @@ def main():
         for i, cid in enumerate(feat_cids)
     }
     ltr_model = lgb.Booster(model_file=str(ARTIFACTS_DIR / "lgbm_ltr_model.bin"))
-    with open(ARTIFACTS_DIR / "feature_columns.json") as f:
+    with open(ARTIFACTS_DIR / "feature_columns.json", encoding="utf-8") as f:
         feature_columns = json.load(f)
 
     t_artifacts = time.time() - t_start
@@ -455,14 +447,14 @@ def main():
     from ranker.recall import hybrid_recall
     recall_results = hybrid_recall(
         jd_embedding=jd_embedding,
-        jd_text="senior AI engineer embeddings retrieval ranking recommendation vector database semantic search NLP transformers production Python PyTorch deployment evaluation NDCG",
+        jd_text=JD_BM25_KEYWORDS,
         faiss_index=faiss_index,
         bm25_index=bm25_index,
         id_mapping=id_mapping,
-        k_dense=5000,
-        k_sparse=500,
+        k_dense=CFG.k_dense,
+        k_sparse=CFG.k_sparse,
     )
-    recalled_ids = [cid for cid, _, _ in recall_results[:5000]]
+    recalled_ids = [cid for cid, _, _ in recall_results[:CFG.k_dense]]
     dense_scores = {cid: ds for cid, ds, _ in recall_results}
     sparse_scores = {cid: ss for cid, _, ss in recall_results}
     t_recall = time.time() - t_recall

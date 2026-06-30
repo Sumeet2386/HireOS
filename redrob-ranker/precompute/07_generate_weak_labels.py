@@ -227,7 +227,7 @@ def main() -> None:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         print("ERROR: OPENAI_API_KEY environment variable not set.")
-        print("Set it with: export OPENAI_API_KEY=sk-...")
+        print("Set it with: export OPENAI_API_KEY=<your-key>")
         sys.exit(1)
 
     output_dir = Path(args.out)
@@ -244,7 +244,7 @@ def main() -> None:
 
     # Save results
     output_path = output_dir / "weak_labels.json"
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     print(f"\nSaved {len(results)} weak labels to {output_path}")
 

@@ -176,7 +176,7 @@ def main() -> None:
 
     # Save JSON
     stats_path = output_dir / "eda_stats.json"
-    with open(stats_path, "w") as f:
+    with open(stats_path, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2)
     print(f"\nEDA stats saved to {stats_path}")
 

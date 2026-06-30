@@ -1,21 +1,21 @@
 """
 Adversarial (honeypot) candidate detection.
 
-Three deterministic heuristic layers plus three extra checks adopted from
-competitor analysis:
+Seven deterministic heuristic layers:
 
-1. Timeline impossibility — career dates overlap education or exceed lifespan
-2. Skill-text entailment failure — advanced/expert skills absent from career text
-3. Skill maturity analysis — claimed experience with tech that didn't exist yet
-4. Heavy career timeline overlap — concurrent positions beyond what's realistic
-5. Keyword stuffer with non-technical title — AI skills but all titles are HR/Accounting
-6. Suspiciously perfect junior profile — too-good-to-be-true behavioral signals for low YoE
+1. Timeline impossibility -- career dates overlap education or exceed lifespan
+2. Skill-text entailment failure -- advanced/expert skills absent from career text
+3. Skill maturity analysis -- claimed experience with tech that didn't exist yet
+4. Heavy career timeline overlap -- concurrent positions beyond realistic limits
+5. Keyword stuffer with non-technical title -- AI skills but all titles are HR/Accounting
+6. Suspiciously perfect junior profile -- too-good-to-be-true signals for low YoE
+7. Fictional company detection -- known trap company names from hackathon docs
 """
 
 from __future__ import annotations
 
-import math
-from datetime import date, datetime
+import logging
+import re
 from typing import Any
 
 from .constants import (
@@ -24,30 +24,41 @@ from .constants import (
     NEGATIVE_TITLE_PATTERNS,
     NON_TECHNICAL_TITLES,
     REFERENCE_DATE,
-    SKILL_SYNONYMS,
+    SYNONYM_REVERSE_LOOKUP,
     TECH_RELEASE_YEARS,
 )
+from .utils import parse_date
 
-
-def _parse_date(value: str | None) -> date | None:
-    """Parse YYYY-MM-DD string to date, returning None on failure."""
-    if not value:
-        return None
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except (ValueError, TypeError):
-        return None
+logger = logging.getLogger(__name__)
 
 
 def _skill_mentioned_in_text(skill_name: str, text: str) -> bool:
-    """Check if a skill (or any of its synonyms) appears in the text."""
+    """Check if a skill (or any of its synonyms) appears in the text.
+
+    Uses the pre-built ``SYNONYM_REVERSE_LOOKUP`` for O(1) synonym
+    resolution instead of iterating all synonym entries.
+
+    Parameters
+    ----------
+    skill_name : str
+        Skill name to search for.
+    text : str
+        Lowercased career/profile text corpus.
+
+    Returns
+    -------
+    bool
+        ``True`` if the skill or a synonym is found in *text*.
+    """
     skill_lower = skill_name.lower()
     if skill_lower in text:
         return True
-    # Check synonyms
-    for key, synonyms in SKILL_SYNONYMS.items():
-        if skill_lower == key or skill_lower in synonyms:
-            return any(syn in text for syn in synonyms) or key in text
+
+    # Use pre-built reverse lookup (O(1) instead of iterating all synonyms)
+    related_terms = SYNONYM_REVERSE_LOOKUP.get(skill_lower)
+    if related_terms:
+        return any(term in text for term in related_terms)
+
     # Check individual words for multi-word skills
     words = skill_lower.split()
     if len(words) > 1:
@@ -56,11 +67,20 @@ def _skill_mentioned_in_text(skill_name: str, text: str) -> bool:
 
 
 def check_timeline_impossibility(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 1: Career dates overlap with education impossibly.
+    """Check 1: Career dates overlap with education impossibly.
 
-    Flag if a candidate had a full-time role (>12 months) that started before
-    they graduated.
+    Flag if a candidate had a full-time role (>12 months) that started
+    before they graduated.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    list[str]
+        List of flag strings (empty if no issues found).
     """
     flags: list[str] = []
     education = candidate.get("education", [])
@@ -69,7 +89,6 @@ def check_timeline_impossibility(candidate: dict[str, Any]) -> list[str]:
     if not education or not career:
         return flags
 
-    # Get the latest graduation year
     grad_years = [
         edu.get("end_year")
         for edu in education
@@ -80,7 +99,7 @@ def check_timeline_impossibility(candidate: dict[str, Any]) -> list[str]:
     latest_grad_year = max(grad_years)
 
     for job in career:
-        start_date = _parse_date(job.get("start_date"))
+        start_date = parse_date(job.get("start_date"))
         duration = job.get("duration_months", 0)
         if start_date and start_date.year < latest_grad_year and duration > 12:
             flags.append(
@@ -92,11 +111,20 @@ def check_timeline_impossibility(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_skill_text_entailment(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 2: Advanced/expert skills should appear somewhere in career text.
+    """Check 2: Advanced/expert skills should appear somewhere in career text.
 
-    If >50% of advanced/expert skills are absent from ALL career descriptions,
-    flag as semantic contradiction.
+    If >50% of advanced/expert skills are absent from ALL career
+    descriptions, flag as semantic contradiction.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    list[str]
+        List of flag strings.
     """
     flags: list[str] = []
     skills = candidate.get("skills", [])
@@ -139,10 +167,19 @@ def check_skill_text_entailment(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_skill_maturity(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 3: Skill duration exceeds technology's lifespan.
+    """Check 3: Skill duration exceeds technology's lifespan.
 
     E.g. claiming 60 months of LangChain when it was released in 2022.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    list[str]
+        List of flag strings.
     """
     flags: list[str] = []
     skills = candidate.get("skills", [])
@@ -166,11 +203,20 @@ def check_skill_maturity(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_heavy_career_overlap(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 4: Career entries overlap by >6 months (concurrent positions
-    beyond what's realistic).
+    """Check 4: Career entries overlap by >6 months.
 
-    Adapted from competitor repo analysis.
+    Concurrent positions beyond what is realistic for legitimate
+    career histories.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    list[str]
+        List of flag strings.
     """
     flags: list[str] = []
     career = candidate.get("career_history", [])
@@ -181,8 +227,8 @@ def check_heavy_career_overlap(candidate: dict[str, Any]) -> list[str]:
     # Parse all career entries with valid dates
     entries = []
     for job in career:
-        start = _parse_date(job.get("start_date"))
-        end = _parse_date(job.get("end_date"))
+        start = parse_date(job.get("start_date"))
+        end = parse_date(job.get("end_date"))
         if start:
             if end is None and job.get("is_current"):
                 end = REFERENCE_DATE
@@ -194,8 +240,8 @@ def check_heavy_career_overlap(candidate: dict[str, Any]) -> list[str]:
 
     overlap_months_total = 0
     for i in range(len(entries) - 1):
-        _, end_i, company_i = entries[i]
-        start_j, _, company_j = entries[i + 1]
+        _, end_i, _ = entries[i]
+        start_j, _, _ = entries[i + 1]
         if end_i > start_j:
             overlap_days = (end_i - start_j).days
             overlap_mo = overlap_days / 30.0
@@ -211,13 +257,20 @@ def check_heavy_career_overlap(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_keyword_stuffer(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 5: AI/ML keywords in skills but ALL titles are non-technical.
+    """Check 5: AI/ML keywords in skills but ALL titles are non-technical.
 
-    E.g. someone with skills like 'PyTorch, BERT, LLM' but every job title
-    is 'Marketing Manager' or 'Accountant'.
+    E.g. someone with skills like 'PyTorch, BERT, LLM' but every job
+    title is 'Marketing Manager' or 'Accountant'.
 
-    Adapted from competitor repo analysis.
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    list[str]
+        List of flag strings.
     """
     flags: list[str] = []
     skills = candidate.get("skills", [])
@@ -226,14 +279,15 @@ def check_keyword_stuffer(candidate: dict[str, Any]) -> list[str]:
 
     # Count AI-relevant skills
     ai_skill_count = 0
-    import re
     for skill in skills:
         name = (skill.get("name") or "").lower()
-        if name in CORE_AI_SKILLS or re.search(r'\b(?:ml|ai|deep learning|nlp|neural)\b', name):
+        if name in CORE_AI_SKILLS or re.search(
+            r"\b(?:ml|ai|deep learning|nlp|neural)\b", name
+        ):
             ai_skill_count += 1
 
     if ai_skill_count < 3:
-        return flags  # Not enough AI skills to be suspicious
+        return flags
 
     # Check if ALL titles are non-technical
     all_titles = [
@@ -256,14 +310,21 @@ def check_keyword_stuffer(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_suspicious_junior(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 6: Junior candidate with suspiciously perfect behavioral signals.
+    """Check 6: Junior candidate with suspiciously perfect behavioral signals.
 
     If YoE < 3 but has very high engagement metrics (response rate > 0.8,
     high recruiter saves, near-perfect assessments), flag as potentially
     synthetic.
 
-    Adapted from competitor repo analysis.
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    list[str]
+        List of flag strings.
     """
     flags: list[str] = []
     profile = candidate.get("profile", {})
@@ -305,13 +366,21 @@ def check_suspicious_junior(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_fictional_company(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 7: Candidate works at a fictional / trap company.
+    """Check 7: Candidate works at a fictional / trap company.
 
     The hackathon docs explicitly list fictional company names
     (Dunder Mifflin, Stark Industries, Globex Inc, Initech, Acme Corp)
-    as honeypot signals. Hooli and Pied Piper (from Silicon Valley)
-    were also found in our data analysis.
+    as honeypot signals.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    list[str]
+        List of flag strings.
     """
     flags: list[str] = []
     career = candidate.get("career_history", [])
@@ -343,12 +412,14 @@ def check_fictional_company(candidate: dict[str, Any]) -> list[str]:
     return flags
 
 
-def detect_honeypot(candidate: dict[str, Any], threshold: int = 2) -> tuple[bool, list[str]]:
-    """
-    Run all honeypot checks and return (is_honeypot, flags).
+def detect_honeypot(
+    candidate: dict[str, Any],
+    threshold: int = 2,
+) -> tuple[bool, list[str]]:
+    """Run all honeypot checks and return (is_honeypot, flags).
 
-    A candidate is flagged as honeypot if they trigger >= `threshold` distinct
-    check categories (not individual flags).
+    A candidate is flagged as honeypot if they trigger >= ``threshold``
+    distinct check categories (not individual flags).
 
     Parameters
     ----------
@@ -360,7 +431,7 @@ def detect_honeypot(candidate: dict[str, Any], threshold: int = 2) -> tuple[bool
     Returns
     -------
     tuple[bool, list[str]]
-        (is_honeypot, list_of_all_flags)
+        ``(is_honeypot, list_of_all_flags)``
     """
     all_flags: list[str] = []
     categories_triggered = 0

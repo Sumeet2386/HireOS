@@ -159,7 +159,7 @@ def main() -> None:
     # Also save the ID mapping (row index → candidate_id)
     mapping = {i: cid for i, cid in enumerate(candidate_ids)}
     mapping_path = output_dir / "id_mapping.json"
-    with open(mapping_path, "w") as f:
+    with open(mapping_path, "w", encoding="utf-8") as f:
         json.dump(mapping, f)
     print(f"ID mapping saved to {mapping_path}")
 

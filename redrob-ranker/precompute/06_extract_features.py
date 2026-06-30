@@ -94,7 +94,7 @@ def main() -> None:
 
     # Also save feature column names for the online phase
     columns_path = output_dir / "feature_columns.json"
-    with open(columns_path, "w") as f:
+    with open(columns_path, "w", encoding="utf-8") as f:
         json.dump(feature_columns, f)
     print(f"Feature columns saved to {columns_path}")
 

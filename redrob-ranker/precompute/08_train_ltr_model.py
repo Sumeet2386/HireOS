@@ -36,7 +36,7 @@ def main() -> None:
 
     # Load weak labels
     print("Loading weak labels...")
-    with open(args.labels, "r") as f:
+    with open(args.labels, "r", encoding="utf-8") as f:
         labels_data = json.load(f)
 
     label_map = {item["candidate_id"]: item["weak_label"] for item in labels_data}
@@ -176,13 +176,13 @@ def main() -> None:
 
     # Save feature columns for inference
     cols_path = output_dir / "feature_columns.json"
-    with open(cols_path, "w") as f:
+    with open(cols_path, "w", encoding="utf-8") as f:
         json.dump(feature_columns, f)
     print(f"Feature columns saved to {cols_path}")
 
     # Save feature importance
     imp_path = output_dir / "feature_importance.json"
-    with open(imp_path, "w") as f:
+    with open(imp_path, "w", encoding="utf-8") as f:
         json.dump(feat_imp, f, indent=2)
     print(f"Feature importance saved to {imp_path}")
 
