@@ -20,6 +20,7 @@ from typing import Any
 
 from .constants import (
     CORE_AI_SKILLS,
+    FICTIONAL_COMPANIES,
     NEGATIVE_TITLE_PATTERNS,
     NON_TECHNICAL_TITLES,
     REFERENCE_DATE,
@@ -303,6 +304,45 @@ def check_suspicious_junior(candidate: dict[str, Any]) -> list[str]:
     return flags
 
 
+def check_fictional_company(candidate: dict[str, Any]) -> list[str]:
+    """
+    Check 7: Candidate works at a fictional / trap company.
+
+    The hackathon docs explicitly list fictional company names
+    (Dunder Mifflin, Stark Industries, Globex Inc, Initech, Acme Corp)
+    as honeypot signals. Hooli and Pied Piper (from Silicon Valley)
+    were also found in our data analysis.
+    """
+    flags: list[str] = []
+    career = candidate.get("career_history", [])
+    profile = candidate.get("profile", {})
+
+    companies_to_check = [
+        (profile.get("current_company") or "").lower().strip(),
+    ] + [
+        (job.get("company") or "").lower().strip()
+        for job in career
+    ]
+
+    fictional_found = []
+    for company in companies_to_check:
+        if not company:
+            continue
+        for fictional in FICTIONAL_COMPANIES:
+            if fictional in company or company in fictional:
+                fictional_found.append(company)
+                break
+
+    if fictional_found:
+        unique = list(set(fictional_found))
+        flags.append(
+            f"FICTIONAL_COMPANY: works at {', '.join(unique)} "
+            f"(known fictional/trap company)"
+        )
+
+    return flags
+
+
 def detect_honeypot(candidate: dict[str, Any], threshold: int = 2) -> tuple[bool, list[str]]:
     """
     Run all honeypot checks and return (is_honeypot, flags).
@@ -363,6 +403,12 @@ def detect_honeypot(candidate: dict[str, Any], threshold: int = 2) -> tuple[bool
     junior_flags = check_suspicious_junior(candidate)
     if junior_flags:
         all_flags.extend(junior_flags)
+        categories_triggered += 1
+
+    # Check 7: Fictional company
+    fictional_flags = check_fictional_company(candidate)
+    if fictional_flags:
+        all_flags.extend(fictional_flags)
         categories_triggered += 1
 
     is_honeypot = categories_triggered >= threshold

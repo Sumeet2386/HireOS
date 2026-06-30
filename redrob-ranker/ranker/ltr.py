@@ -165,18 +165,22 @@ def fallback_weighted_scoring(
         )
 
         # Product company experience (JD explicitly prefers this)
+        # Use product_company_count (r=0.416) not just binary flag
+        product_count = feats.get("product_company_count", 0.0)
+        product_count_score = min(1.0, product_count / 3.0)  # Saturates at 3
         company_score = (
-            feats.get("has_product_company_exp", 0.0) * 0.6 +
-            (1.0 - feats.get("all_consulting_career", 0.0)) * 0.2 +
-            feats.get("tenure_fit", 0.5) * 0.2
+            product_count_score * 0.45 +  # Count is more predictive than binary
+            feats.get("has_product_company_exp", 0.0) * 0.25 +
+            (1.0 - feats.get("all_consulting_career", 0.0)) * 0.15 +
+            feats.get("tenure_fit", 0.5) * 0.15
         )
 
         core_fit = (
-            title_score * 0.22 +       # Reduced — surface signal
-            yoe_score * 0.20 +          # Reduced — surface signal
+            title_score * 0.22 +       # Top-correlated feature (r=0.51)
+            yoe_score * 0.18 +
             skill_match * 0.15 +
-            skill_quality * 0.25 +      # Increased — best quality signal
-            company_score * 0.18        # Increased — JD prefers product co.
+            skill_quality * 0.25 +      # Best quality signal
+            company_score * 0.20        # product_company_count r=0.416
         ) + skill_match_bonus - under_exp_penalty - over_exp_penalty
 
         # ── 2. Semantic Match Score (0-1 range, 25% weight) ──
@@ -185,18 +189,28 @@ def fallback_weighted_scoring(
             feats.get("bm25_score_jd", 0.0) * 0.25
         )
 
-        # ── 3. Behavioral Score (0-1 range, 18% weight — ADDITIVE, not multiplier) ──
+        # ── 3. Behavioral Score (0-1 range — ADDITIVE, not multiplier) ──
+        # Data-driven: search_appearance r=0.478, saved_by_recruiters r=0.388,
+        # profile_views r=0.334 — these were completely missing before!
         activity = feats.get("activity_decay_score", 0.5)
         response = feats.get("recruiter_response_rate", 0.3)
         interview = feats.get("interview_completion_rate", 0.5)
         github = feats.get("github_activity_score", 0.0)
 
+        # Normalize high-range signals to [0,1]
+        saved = min(1.0, feats.get("saved_by_recruiters_30d", 0.0) / 20.0)
+        search = min(1.0, feats.get("search_appearance_30d", 0.0) / 200.0)
+        views = min(1.0, feats.get("profile_views_30d", 0.0) / 100.0)
+
         behavioral_score = (
-            activity * 0.30 +
-            response * 0.30 +
-            interview * 0.15 +
-            github * 0.10 +
-            feats.get("open_to_work", 0.0) * 0.15
+            search * 0.22 +           # r=0.478 — top behavioral signal
+            saved * 0.20 +            # r=0.388 — recruiter crowdsource
+            response * 0.15 +         # r=0.136
+            activity * 0.15 +         # r=0.152
+            views * 0.10 +            # r=0.334
+            interview * 0.08 +        # r=0.140
+            github * 0.05 +           # r=0.188
+            feats.get("open_to_work", 0.0) * 0.05
         )
 
         # ── 4. Availability Score (0-1 range, 7% weight) ──
@@ -286,13 +300,30 @@ def fallback_weighted_scoring(
         if feats.get("all_consulting_career", 0.0) > 0:
             penalty += 0.08
 
+        # Fictional company penalty — candidates at known trap companies
+        # (Hooli, Pied Piper, Stark Industries, etc.)
+        if feats.get("has_fictional_company", 0.0) > 0:
+            penalty += 0.30
+
+        # Non-technical title with AI skills — keyword stuffer pattern
+        # Data analysis confirmed these are traps (Customer Support at Hooli
+        # with LangChain/RAG skills)
+        title_rel = feats.get("current_title_relevance", 0.5)
+        n_ai = feats.get("num_core_ai_skills", 0.0)
+        if title_rel <= 0.1 and n_ai >= 3:
+            penalty += 0.25  # Strong keyword-stuffer signal
+
         # ── Final Composite Score — ADDITIVE, weights sum to 1.0 ──
+        # Weights calibrated against weak-label correlations:
+        #   title/skills/company (core_fit) dominate r=0.40-0.51
+        #   behavioral signals are top-4 by correlation (r=0.33-0.48)
+        #   location is near-zero (r=0.04)
         raw_score = (
-            core_fit * 0.48 +           # Increased: skills+title matter most
-            semantic_score * 0.25 +
-            behavioral_score * 0.12 +   # Reduced: platform engagement ≠ quality
+            core_fit * 0.50 +           # Title r=0.51, skills r=0.41-0.48
+            semantic_score * 0.20 +     # Recall signal, useful but noisy
+            behavioral_score * 0.17 +   # search_appearance r=0.48, saved r=0.39
             availability_score * 0.07 +
-            location * 0.08
+            location * 0.06             # is_india r=0.05, is_tier1 r=0.04
         )
 
         # Apply penalties (multiplicative to avoid negative scores)

@@ -253,6 +253,30 @@ PRODUCT_INDUSTRY_KEYWORDS: tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
+# Fictional / trap companies (from hackathon docs + analysis)
+# These companies are used in honeypot candidate profiles
+# ---------------------------------------------------------------------------
+FICTIONAL_COMPANIES: set[str] = {
+    "dunder mifflin", "dunder-mifflin",
+    "stark industries",
+    "globex", "globex inc", "globex corporation",
+    "initech",
+    "acme", "acme corp", "acme corporation",
+    "hooli",
+    "pied piper", "piedpiper",
+    "wayne enterprises", "wayne industries",
+    "umbrella corporation", "umbrella corp",
+    "cyberdyne", "cyberdyne systems",
+    "tyrell corporation",
+    "weyland-yutani", "weyland yutani",
+    "oscorp", "oscorp industries",
+    "massive dynamic",
+    "soylent", "soylent corp",
+    "wonka industries",
+    "prestige worldwide",
+}
+
+# ---------------------------------------------------------------------------
 # Tier 1 Indian cities
 # ---------------------------------------------------------------------------
 TIER1_INDIA_CITIES: set[str] = {

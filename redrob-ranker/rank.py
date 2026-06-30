@@ -188,7 +188,29 @@ def run_pipeline(
 
         candidate_features[cid] = features
 
+    # Enrich precomputed features with live honeypot checks
+    # The precomputed features.parquet may lack new checks (e.g. fictional companies).
+    # Run live detection on recalled candidates to update flags before scoring.
+    enriched = 0
+    for cid, feats in candidate_features.items():
+        if cid in candidates_by_id:
+            is_hp, flags = detect_honeypot(candidates_by_id[cid])
+            new_hp = 1.0 if is_hp else 0.0
+            new_count = float(len(flags))
+            new_fictional = 1.0 if any(f.startswith("FICTIONAL_COMPANY") for f in flags) else 0.0
+            new_maturity = 1.0 if any(f.startswith("MATURITY_IMPOSSIBLE") for f in flags) else 0.0
+
+            # Update with max of precomputed vs live (never reduce flags)
+            if new_hp > feats.get("is_honeypot", 0.0):
+                feats["is_honeypot"] = new_hp
+                enriched += 1
+            feats["honeypot_flag_count"] = max(feats.get("honeypot_flag_count", 0.0), new_count)
+            feats["has_fictional_company"] = max(feats.get("has_fictional_company", 0.0), new_fictional)
+            feats["has_maturity_impossible"] = max(feats.get("has_maturity_impossible", 0.0), new_maturity)
+
     print(f"  Features extracted for {len(candidate_features):,} candidates in {time.time()-t2:.1f}s")
+    if enriched > 0:
+        print(f"  Live honeypot enrichment: {enriched} candidates newly flagged")
 
     # ── Stage 3: Multi-signal Scoring ──
     # NOTE: We use the fallback_weighted_scoring function which implements a
@@ -206,6 +228,9 @@ def run_pipeline(
     print(f"  Scored {len(ranked):,} candidates in {time.time()-t3:.1f}s")
 
     # ── Stage 4: Honeypot pruning ──
+    # IMPORTANT: Precomputed features.parquet may not have new honeypot checks
+    # (e.g., fictional company detection). Run live detection on top 300 to
+    # ensure new checks are applied.
     print("\n[Stage 4] Honeypot pruning (top 300 -> top 100)...")
     t4 = time.time()
 
@@ -215,16 +240,29 @@ def run_pipeline(
 
     for cid, score in top_300:
         feats = candidate_features.get(cid, {})
+
+        # Always run live honeypot check if candidate data is available
+        # This catches new checks (fictional companies) not in precomputed features
+        if cid in candidates_by_id:
+            is_hp, flags = detect_honeypot(candidates_by_id[cid])
+            # Update features with live-detected flags
+            feats["is_honeypot"] = 1.0 if is_hp else feats.get("is_honeypot", 0.0)
+            feats["honeypot_flag_count"] = max(
+                feats.get("honeypot_flag_count", 0.0),
+                float(len(flags)),
+            )
+            feats["has_fictional_company"] = 1.0 if any(
+                f.startswith("FICTIONAL_COMPANY") for f in flags
+            ) else 0.0
+            feats["has_maturity_impossible"] = max(
+                feats.get("has_maturity_impossible", 0.0),
+                1.0 if any(f.startswith("MATURITY_IMPOSSIBLE") for f in flags) else 0.0,
+            )
+            candidate_features[cid] = feats
+
         if feats.get("is_honeypot", 0) > 0:
             pruned_count += 1
             continue
-
-        # Additional live honeypot check for candidates without precomputed flags
-        if cid in candidates_by_id and cid not in precomputed:
-            is_hp, _ = detect_honeypot(candidates_by_id[cid])
-            if is_hp:
-                pruned_count += 1
-                continue
 
         clean_candidates.append((cid, score))
 

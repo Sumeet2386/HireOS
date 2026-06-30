@@ -22,6 +22,7 @@ from .constants import (
     ADJACENT_SIGNAL_TITLES,
     CONSULTING_FIRMS,
     CORE_AI_SKILLS,
+    FICTIONAL_COMPANIES,
     HIGH_SIGNAL_SKILLS,
     HIGH_SIGNAL_TITLES,
     NEGATIVE_TITLE_PATTERNS,
@@ -444,5 +445,6 @@ def extract_all_features(candidate: dict[str, Any]) -> dict[str, float]:
     features["is_honeypot"] = 1.0 if is_honeypot else 0.0
     features["honeypot_flag_count"] = float(len(honeypot_flags))
     features["has_maturity_impossible"] = 1.0 if any(f.startswith("MATURITY_IMPOSSIBLE") for f in honeypot_flags) else 0.0
+    features["has_fictional_company"] = 1.0 if any(f.startswith("FICTIONAL_COMPANY") for f in honeypot_flags) else 0.0
 
     return features
