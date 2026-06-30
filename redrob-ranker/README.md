@@ -111,8 +111,9 @@ python precompute/06_extract_features.py --candidates $CANDIDATES --out artifact
 
 # Step 7: Generate weak labels → artifacts/weak_labels.json
 #   ⚠ Requires OPENAI_API_KEY environment variable (GPT-4o-mini, ~$1.50 for 2K samples)
+#   Uses features.parquet from Step 6 for stratified sampling
 export OPENAI_API_KEY=sk-...
-python precompute/07_generate_weak_labels.py --candidates $CANDIDATES --out artifacts
+python precompute/07_generate_weak_labels.py --features artifacts/features.parquet --candidates $CANDIDATES --out artifacts
 
 # Step 8: Train LTR model → artifacts/lgbm_ltr_model.bin, artifacts/feature_importance.json
 python precompute/08_train_ltr_model.py --features artifacts/features.parquet --labels artifacts/weak_labels.json --out artifacts
