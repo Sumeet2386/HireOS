@@ -263,7 +263,9 @@ def fallback_weighted_scoring(
             if feats.get("skill_text_entailment_rate", 0.0) < 0.40:
                 penalty += 0.08
 
-        # Honeypot flag count — smoother gradient (was only 4/6 tiers)
+        # Honeypot flag count — smoother gradient.
+        # V2 experiment showed softening this hurts NDCG@10 by -0.08 because
+        # it boosts low-quality candidates with high behavioral signals.
         flag_count = feats.get("honeypot_flag_count", 0.0)
         if flag_count >= 7:
             penalty += 0.35
