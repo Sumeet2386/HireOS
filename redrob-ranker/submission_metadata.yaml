@@ -17,9 +17,9 @@ team_members:
 # ============================================================================
 # Code and reproducibility
 # ============================================================================
-github_repo: "https://github.com/REPLACE_WITH_YOUR_REPO"
+github_repo: "https://github.com/Sumeet2386/HireOS"
 
-sandbox_link: "https://huggingface.co/spaces/REPLACE_WITH_YOUR_SPACE"
+sandbox_link: "https://huggingface.co/spaces/harshal9657/HireOS"
 
 reproduce_command: "python rank.py --candidates ./candidates.jsonl --out ./submission.csv --artifacts artifacts"
 
