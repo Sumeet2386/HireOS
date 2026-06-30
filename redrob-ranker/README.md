@@ -119,9 +119,14 @@ python precompute/07_generate_weak_labels.py --features artifacts/features.parqu
 python precompute/08_train_ltr_model.py --features artifacts/features.parquet --labels artifacts/weak_labels.json --out artifacts
 ```
 
-**Option B: Use pre-built artifacts** (if available)
+**Option B: Download from HuggingFace (Recommended for Judges)**
 
-If you have a copy of the artifacts bundle, simply extract it into `redrob-ranker/artifacts/`. The expected contents:
+We have hosted the pre-computed artifacts bundle (~560 MB) on a public HuggingFace model repo. Run the download script to fetch them automatically:
+
+```bash
+python download_artifacts.py
+```
+This will download the expected contents into `artifacts/`:
 
 | File | Size | Description |
 |---|---|---|

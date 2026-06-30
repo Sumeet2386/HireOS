@@ -20,8 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY ranker/ ranker/
 COPY rank.py .
 
-# Copy pre-computed artifacts (built during precompute phase)
-COPY artifacts/ artifacts/
+# Copy download script and fetch artifacts from HuggingFace
+COPY download_artifacts.py .
+RUN python download_artifacts.py --out artifacts/
 
 # Default command: run ranking pipeline
 ENTRYPOINT ["python", "rank.py"]
