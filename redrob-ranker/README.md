@@ -76,10 +76,66 @@ cd redrob-ranker
 
 # Install dependencies
 pip install -r requirements.txt
-
-# Download/place pre-computed artifacts into artifacts/ directory
-# (These are too large for git — contact the team for the artifacts bundle)
 ```
+
+### Pre-computed Artifacts
+
+The `artifacts/` directory (~580 MB) is excluded from git due to size. You have two options:
+
+**Option A: Regenerate from scratch** (~45 min, requires `candidates.jsonl`)
+
+Run the 8 precompute scripts in order. Steps 1–6 and 8 are fully offline; step 7 requires an OpenAI API key.
+
+```bash
+# Set path to your candidates file
+export CANDIDATES=../India_runs_data_and_ai_challenge/candidates.jsonl
+
+# Step 1: Exploratory data analysis → artifacts/eda_stats.json
+python precompute/01_eda.py --candidates $CANDIDATES --out artifacts
+
+# Step 2: Text synthesis → artifacts/candidate_texts.parquet, artifacts/id_mapping.json
+python precompute/02_text_synthesis.py --candidates $CANDIDATES --out artifacts
+
+# Step 3: Generate embeddings → artifacts/embeddings.npy, artifacts/jd_embedding.npy
+#   (Downloads BAAI/bge-small-en-v1.5 on first run, ~130 MB)
+python precompute/03_generate_embeddings.py --texts artifacts/candidate_texts.parquet --out artifacts
+
+# Step 4: Build FAISS index → artifacts/index.faiss
+python precompute/04_build_faiss_index.py --embeddings artifacts/embeddings.npy --out artifacts
+
+# Step 5: Build BM25 index → artifacts/bm25_index.pkl
+python precompute/05_build_bm25_index.py --texts artifacts/candidate_texts.parquet --out artifacts
+
+# Step 6: Extract features → artifacts/features.parquet, artifacts/feature_columns.json
+python precompute/06_extract_features.py --candidates $CANDIDATES --out artifacts
+
+# Step 7: Generate weak labels → artifacts/weak_labels.json
+#   ⚠ Requires OPENAI_API_KEY environment variable (GPT-4o-mini, ~$1.50 for 2K samples)
+export OPENAI_API_KEY=sk-...
+python precompute/07_generate_weak_labels.py --candidates $CANDIDATES --out artifacts
+
+# Step 8: Train LTR model → artifacts/lgbm_ltr_model.bin, artifacts/feature_importance.json
+python precompute/08_train_ltr_model.py --features artifacts/features.parquet --labels artifacts/weak_labels.json --out artifacts
+```
+
+**Option B: Use pre-built artifacts** (if available)
+
+If you have a copy of the artifacts bundle, simply extract it into `redrob-ranker/artifacts/`. The expected contents:
+
+| File | Size | Description |
+|---|---|---|
+| `bm25_index.pkl` | 206 MB | BM25 sparse retrieval index |
+| `index.faiss` | 154 MB | FAISS dense retrieval index |
+| `embeddings.npy` | 154 MB | 100K × 384 candidate embeddings |
+| `candidate_texts.parquet` | 69 MB | Synthesized candidate text documents |
+| `features.parquet` | 3.4 MB | 100K × 50 pre-computed features |
+| `id_mapping.json` | 2.5 MB | Row index → candidate_id mapping |
+| `weak_labels.json` | 388 KB | GPT-4o-mini weak labels (2K samples) |
+| `lgbm_ltr_model.bin` | 18 KB | Trained LightGBM LambdaMART model |
+| `jd_embedding.npy` | 1.6 KB | JD query embedding (384-dim) |
+| `eda_stats.json` | 3.2 KB | Dataset statistics |
+| `feature_columns.json` | 1.2 KB | Feature column ordering |
+| `feature_importance.json` | 2.7 KB | LightGBM feature importance |
 
 ### Run Ranking
 
