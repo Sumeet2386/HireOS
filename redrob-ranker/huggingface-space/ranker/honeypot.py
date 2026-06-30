@@ -1,20 +1,27 @@
 """
 Adversarial (honeypot) candidate detection.
 
-Three deterministic heuristic layers plus three extra checks adopted from
-competitor analysis:
+Eight deterministic heuristic layers:
 
-1. Timeline impossibility — career dates overlap education or exceed lifespan
-2. Skill-text entailment failure — advanced/expert skills absent from career text
-3. Skill maturity analysis — claimed experience with tech that didn't exist yet
-4. Heavy career timeline overlap — concurrent positions beyond what's realistic
-5. Keyword stuffer with non-technical title — AI skills but all titles are HR/Accounting
-6. Suspiciously perfect junior profile — too-good-to-be-true behavioral signals for low YoE
+1. Timeline impossibility -- career start ≥3 years before graduation
+2. Skill-text entailment failure -- ≥4 advanced/expert skills, >75% absent from career text
+3. Skill maturity analysis -- claimed experience with tech that didn't exist yet
+4. Heavy career timeline overlap -- concurrent positions beyond realistic limits
+5. Keyword stuffer with non-technical title -- AI skills but all titles are HR/Accounting
+6. Suspiciously perfect junior profile -- too-good-to-be-true signals for low YoE
+7. Fictional company detection -- known trap company names (soft signal only)
+8. Expert with zero duration -- "expert" proficiency in skills with 0 months used
+
+NOTE on fictional companies: The dataset uses fictional company names (Dunder
+Mifflin, Initech, etc.) as career-history padding for ~82% of candidates.
+Having a fictional company is NOT a honeypot signal -- it's dataset design.
+The check is kept for soft penalty in scoring but does NOT count toward the
+honeypot threshold.
 """
 
 from __future__ import annotations
 
-import math
+import re
 from datetime import date, datetime
 from typing import Any
 
@@ -56,11 +63,11 @@ def _skill_mentioned_in_text(skill_name: str, text: str) -> bool:
 
 
 def check_timeline_impossibility(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 1: Career dates overlap with education impossibly.
+    """Check 1: Career dates overlap with education by ≥3 years.
 
-    Flag if a candidate had a full-time role (>12 months) that started before
-    they graduated.
+    In India, campus placements routinely start 1-2 years before
+    graduation. Only flag when the gap is ≥3 years, which is genuinely
+    impossible for a full-time role.
     """
     flags: list[str] = []
     education = candidate.get("education", [])
@@ -69,7 +76,6 @@ def check_timeline_impossibility(candidate: dict[str, Any]) -> list[str]:
     if not education or not career:
         return flags
 
-    # Get the latest graduation year
     grad_years = [
         edu.get("end_year")
         for edu in education
@@ -82,21 +88,25 @@ def check_timeline_impossibility(candidate: dict[str, Any]) -> list[str]:
     for job in career:
         start_date = _parse_date(job.get("start_date"))
         duration = job.get("duration_months", 0)
-        if start_date and start_date.year < latest_grad_year and duration > 12:
-            flags.append(
-                f"TIMELINE_IMPOSSIBLE: job at {job.get('company', '?')} "
-                f"started {start_date.year} but graduated {latest_grad_year}"
-            )
+        if start_date and duration > 12:
+            gap = latest_grad_year - start_date.year
+            # Only flag if started ≥3 years before graduation
+            if gap >= 3:
+                flags.append(
+                    f"TIMELINE_IMPOSSIBLE: job at {job.get('company', '?')} "
+                    f"started {start_date.year} but graduated {latest_grad_year} "
+                    f"({gap}y gap)"
+                )
 
     return flags
 
 
 def check_skill_text_entailment(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 2: Advanced/expert skills should appear somewhere in career text.
+    """Check 2: Advanced/expert skills should appear somewhere in career text.
 
-    If >50% of advanced/expert skills are absent from ALL career descriptions,
-    flag as semantic contradiction.
+    Only triggers the SEMANTIC_CONTRADICTION flag when:
+    - The candidate has ≥4 advanced/expert skills, AND
+    - >75% of those skills are absent from ALL career text.
     """
     flags: list[str] = []
     skills = candidate.get("skills", [])
@@ -127,20 +137,23 @@ def check_skill_text_entailment(candidate: dict[str, Any]) -> list[str]:
         if not _skill_mentioned_in_text(skill_name, career_text):
             unentailed.append(skill_name)
 
-    # Flag individual unentailed skills
+    # Flag individual unentailed skills (soft signals)
     for name in unentailed:
         flags.append(f"SKILL_NOT_ENTAILED: {name}")
 
-    # Flag if majority of advanced skills are unentailed
-    if len(unentailed) > len(advanced_skills) * 0.5:
-        flags.append("SEMANTIC_CONTRADICTION: >50% advanced skills not found in career text")
+    # Only flag SEMANTIC_CONTRADICTION when there are enough advanced skills
+    # (≥4) and a strong majority (>75%) are unentailed
+    if len(advanced_skills) >= 4 and len(unentailed) > len(advanced_skills) * 0.75:
+        flags.append(
+            f"SEMANTIC_CONTRADICTION: {len(unentailed)}/{len(advanced_skills)} "
+            f"advanced skills not found in career text"
+        )
 
     return flags
 
 
 def check_skill_maturity(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 3: Skill duration exceeds technology's lifespan.
+    """Check 3: Skill duration exceeds technology's lifespan.
 
     E.g. claiming 60 months of LangChain when it was released in 2022.
     """
@@ -166,11 +179,8 @@ def check_skill_maturity(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_heavy_career_overlap(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 4: Career entries overlap by >6 months (concurrent positions
+    """Check 4: Career entries overlap by >6 months (concurrent positions
     beyond what's realistic).
-
-    Adapted from competitor repo analysis.
     """
     flags: list[str] = []
     career = candidate.get("career_history", [])
@@ -211,13 +221,10 @@ def check_heavy_career_overlap(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_keyword_stuffer(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 5: AI/ML keywords in skills but ALL titles are non-technical.
+    """Check 5: AI/ML keywords in skills but ALL titles are non-technical.
 
     E.g. someone with skills like 'PyTorch, BERT, LLM' but every job title
     is 'Marketing Manager' or 'Accountant'.
-
-    Adapted from competitor repo analysis.
     """
     flags: list[str] = []
     skills = candidate.get("skills", [])
@@ -226,7 +233,6 @@ def check_keyword_stuffer(candidate: dict[str, Any]) -> list[str]:
 
     # Count AI-relevant skills
     ai_skill_count = 0
-    import re
     for skill in skills:
         name = (skill.get("name") or "").lower()
         if name in CORE_AI_SKILLS or re.search(r'\b(?:ml|ai|deep learning|nlp|neural)\b', name):
@@ -256,14 +262,11 @@ def check_keyword_stuffer(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_suspicious_junior(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 6: Junior candidate with suspiciously perfect behavioral signals.
+    """Check 6: Junior candidate with suspiciously perfect behavioral signals.
 
     If YoE < 3 but has very high engagement metrics (response rate > 0.8,
     high recruiter saves, near-perfect assessments), flag as potentially
     synthetic.
-
-    Adapted from competitor repo analysis.
     """
     flags: list[str] = []
     profile = candidate.get("profile", {})
@@ -305,13 +308,12 @@ def check_suspicious_junior(candidate: dict[str, Any]) -> list[str]:
 
 
 def check_fictional_company(candidate: dict[str, Any]) -> list[str]:
-    """
-    Check 7: Candidate works at a fictional / trap company.
+    """Check 7: Candidate works at a fictional / trap company.
 
-    The hackathon docs explicitly list fictional company names
-    (Dunder Mifflin, Stark Industries, Globex Inc, Initech, Acme Corp)
-    as honeypot signals. Hooli and Pied Piper (from Silicon Valley)
-    were also found in our data analysis.
+    NOTE: ~82% of candidates in the dataset have fictional company names
+    as career-history padding. This is a dataset design choice, NOT a
+    reliable honeypot signal. Flags are returned for soft scoring penalty
+    but do NOT count toward the honeypot threshold.
     """
     flags: list[str] = []
     career = candidate.get("career_history", [])
@@ -343,19 +345,49 @@ def check_fictional_company(candidate: dict[str, Any]) -> list[str]:
     return flags
 
 
-def detect_honeypot(candidate: dict[str, Any], threshold: int = 2) -> tuple[bool, list[str]]:
+def check_expert_zero_duration(candidate: dict[str, Any]) -> list[str]:
+    """Check 8: Expert proficiency with 0 months of experience.
+
+    Per the official hackathon docs, a key honeypot signal is
+    "expert proficiency in 10 skills with 0 years used". Flag when
+    a candidate has ≥3 skills at expert/advanced level with 0 duration.
     """
-    Run all honeypot checks and return (is_honeypot, flags).
+    flags: list[str] = []
+    skills = candidate.get("skills", [])
+
+    zero_duration_experts = [
+        s for s in skills
+        if s.get("proficiency") in ("expert", "advanced")
+        and s.get("duration_months", 1) == 0
+    ]
+
+    if len(zero_duration_experts) >= 3:
+        names = [s.get("name", "?") for s in zero_duration_experts[:5]]
+        flags.append(
+            f"EXPERT_ZERO_DURATION: {len(zero_duration_experts)} expert/advanced skills "
+            f"with 0 months used ({', '.join(names)})"
+        )
+
+    return flags
+
+
+def detect_honeypot(candidate: dict[str, Any], threshold: int = 3) -> tuple[bool, list[str]]:
+    """Run all honeypot checks and return (is_honeypot, flags).
 
     A candidate is flagged as honeypot if they trigger >= `threshold` distinct
-    check categories (not individual flags).
+    **hard** check categories (not individual flags).
+
+    IMPORTANT: The fictional company check (Check 7) does NOT count
+    toward the threshold because ~82% of candidates have fictional
+    company names as career-history padding.
 
     Parameters
     ----------
     candidate : dict
         Full candidate JSON record.
     threshold : int
-        Minimum number of distinct check categories to trigger honeypot flag.
+        Minimum number of distinct hard check categories to trigger
+        honeypot flag. Default is 3.
 
     Returns
     -------
@@ -365,13 +397,13 @@ def detect_honeypot(candidate: dict[str, Any], threshold: int = 2) -> tuple[bool
     all_flags: list[str] = []
     categories_triggered = 0
 
-    # Check 1: Timeline
+    # Check 1: Timeline (hard signal — only ≥3 year gaps)
     timeline_flags = check_timeline_impossibility(candidate)
     if timeline_flags:
         all_flags.extend(timeline_flags)
         categories_triggered += 1
 
-    # Check 2: Skill-text entailment
+    # Check 2: Skill-text entailment (hard signal — ≥4 skills, >75% unentailed)
     entailment_flags = check_skill_text_entailment(candidate)
     # Only count if the broad SEMANTIC_CONTRADICTION flag fired
     if any("SEMANTIC_CONTRADICTION" in f for f in entailment_flags):
@@ -381,34 +413,41 @@ def detect_honeypot(candidate: dict[str, Any], threshold: int = 2) -> tuple[bool
         all_flags.extend(entailment_flags)
         # Individual skill misses are a soft signal, not a full category
 
-    # Check 3: Skill maturity
+    # Check 3: Skill maturity (hard signal — precise)
     maturity_flags = check_skill_maturity(candidate)
     if maturity_flags:
         all_flags.extend(maturity_flags)
         categories_triggered += 1
 
-    # Check 4: Heavy career overlap
+    # Check 4: Heavy career overlap (hard signal)
     overlap_flags = check_heavy_career_overlap(candidate)
     if overlap_flags:
         all_flags.extend(overlap_flags)
         categories_triggered += 1
 
-    # Check 5: Keyword stuffer
+    # Check 5: Keyword stuffer (hard signal)
     stuffer_flags = check_keyword_stuffer(candidate)
     if stuffer_flags:
         all_flags.extend(stuffer_flags)
         categories_triggered += 1
 
-    # Check 6: Suspicious junior
+    # Check 6: Suspicious junior (hard signal)
     junior_flags = check_suspicious_junior(candidate)
     if junior_flags:
         all_flags.extend(junior_flags)
         categories_triggered += 1
 
-    # Check 7: Fictional company
+    # Check 7: Fictional company (SOFT signal — does NOT count toward threshold)
+    # ~82% of candidates have fictional companies as dataset padding
     fictional_flags = check_fictional_company(candidate)
     if fictional_flags:
         all_flags.extend(fictional_flags)
+        # NOT incrementing categories_triggered
+
+    # Check 8: Expert with zero duration (hard signal)
+    zero_dur_flags = check_expert_zero_duration(candidate)
+    if zero_dur_flags:
+        all_flags.extend(zero_dur_flags)
         categories_triggered += 1
 
     is_honeypot = categories_triggered >= threshold
