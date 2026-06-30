@@ -19,8 +19,12 @@ team_members:
     role: "Data Engineer & Backend Developer"
 
   - name: "Prem More"
-    email: "premmore@gmail.com"
+    email: "premmore172006@gmail.com"
     role: "LLM, Evaluation & DevOps Engineer"
+
+  - name: "Soham Ingole"
+    email: "sohamingole25@gmail.com"
+    role: "Backend & Documentation"
 
 # ============================================================================
 # Code and reproducibility
