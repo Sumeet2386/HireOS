@@ -57,7 +57,7 @@ redrob-ranker/
 ├── Dockerfile                 # Docker build for sandbox reproduction
 ├── requirements.txt           # Python dependencies
 ├── submission_metadata.yaml   # Hackathon metadata
-└── final_submission.csv       # Output: top 100 ranked candidates
+└── team_Discern.csv           # Output: top 100 ranked candidates
 ```
 
 ---

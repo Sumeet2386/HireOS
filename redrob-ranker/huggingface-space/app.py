@@ -21,7 +21,7 @@ from ranker.ltr import fallback_weighted_scoring
 from ranker.reasoning import generate_reasoning
 
 # ── Pre-computed Docker results ──
-PRECOMPUTED_CSV = ROOT / "final_submission.csv"
+PRECOMPUTED_CSV = ROOT / "team_Discern.csv"
 
 
 def load_precomputed():
@@ -92,7 +92,7 @@ def run_ranking(file_obj, top_n, use_precomputed):
         mode = "Pre-computed (Docker-identical)"
         details = (
             f"Mode: {mode}\n"
-            f"Source: final_submission.csv ({len(PRECOMPUTED)} ranked candidates)\n\n"
+            f"Source: team_Discern.csv ({len(PRECOMPUTED)} ranked candidates)\n\n"
             "Full pipeline: FAISS → BM25 → LightGBM LambdaMART → Honeypot pruning → Reasoning"
         )
 

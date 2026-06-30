@@ -41,7 +41,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 CANDIDATES_PATH = str(ROOT.parent / "India_runs_data_and_ai_challenge" / "candidates.jsonl")
-SUBMISSION_CSV = ROOT / "final_submission.csv"
+SUBMISSION_CSV = ROOT / "team_Discern.csv"
 ARTIFACTS_DIR = ROOT / "artifacts"
 
 SEP = "=" * 70
