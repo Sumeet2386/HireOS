@@ -175,14 +175,16 @@ def fallback_weighted_scoring(
         skill_match = min(1.0, n_high_signal / W.high_signal_skill_saturation)
         skill_match_bonus = min(W.skill_match_bonus_cap, n_high_signal * W.skill_match_bonus_per_skill)
 
-        # Skill quality signals
+        # Skill quality signals (includes JD-specific skill categories)
         skill_quality = (
-            feats.get("skill_proficiency_score", 0.0) * 0.25 +
-            feats.get("skill_text_entailment_rate", 0.0) * 0.35 +
+            feats.get("skill_proficiency_score", 0.0) * 0.18 +
+            feats.get("skill_text_entailment_rate", 0.0) * 0.22 +
             feats.get("has_embedding_skills", 0.0) * 0.12 +
             feats.get("has_vector_db_skills", 0.0) * 0.12 +
-            feats.get("has_nlp_ir_skills", 0.0) * 0.08 +
-            feats.get("has_evaluation_skills", 0.0) * 0.08
+            feats.get("has_nlp_ir_skills", 0.0) * 0.10 +
+            feats.get("has_evaluation_skills", 0.0) * 0.10 +
+            feats.get("has_python", 0.0) * 0.08 +
+            feats.get("has_llm_skills", 0.0) * 0.08
         )
 
         # Product company experience
@@ -256,30 +258,27 @@ def fallback_weighted_scoring(
         if feats.get("is_honeypot", 0.0) > 0:
             penalty += W.honeypot_penalty
 
+        # Maturity impossibility is a soft signal (not disqualifying)
+        # since duration_months data is often noisy in the dataset
         if feats.get("has_maturity_impossible", 0.0) > 0:
             penalty += W.maturity_impossible_penalty
-            if feats.get("skill_text_entailment_rate", 0.0) < 0.40:
-                penalty += 0.08
 
         flag_count = feats.get("honeypot_flag_count", 0.0)
-        if flag_count >= 7:
-            penalty += 0.35
-        elif flag_count >= 5:
-            penalty += 0.18
-        elif flag_count >= 4:
-            penalty += 0.10
+        if flag_count >= 5:
+            penalty += 0.30
         elif flag_count >= 3:
+            penalty += 0.15
+        elif flag_count >= 2:
             penalty += 0.05
 
-        # Low entailment penalty -- only when advanced skills are claimed
+        # Low entailment penalty — only for candidates with many advanced
+        # skills and near-zero entailment (truly suspicious profiles)
         entailment = feats.get("skill_text_entailment_rate", 0.0)
         n_advanced = feats.get("num_advanced_expert_skills", 0.0)
-        if n_advanced > 0:
-            if entailment < 0.10:
-                penalty += 0.10
-            elif entailment < 0.20:
+        if n_advanced >= 5:
+            if entailment < 0.05:
                 penalty += 0.06
-            elif entailment < 0.30:
+            elif entailment < 0.10:
                 penalty += 0.03
 
         trust_penalty = feats.get("assessment_trust_penalty", 0.0)
@@ -291,8 +290,10 @@ def fallback_weighted_scoring(
         if feats.get("all_consulting_career", 0.0) > 0:
             penalty += W.all_consulting_penalty
 
-        if feats.get("has_fictional_company", 0.0) > 0:
-            penalty += W.fictional_company_penalty
+        # Fictional company penalty disabled — ~82% of candidates have
+        # fictional companies as dataset padding, not a honeypot signal.
+        # if feats.get("has_fictional_company", 0.0) > 0:
+        #     penalty += W.fictional_company_penalty
 
         title_rel = feats.get("current_title_relevance", 0.5)
         n_ai = feats.get("num_core_ai_skills", 0.0)

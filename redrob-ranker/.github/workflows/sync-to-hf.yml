@@ -1,0 +1,44 @@
+name: Sync to HuggingFace Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'huggingface-space/**'
+
+  # Allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push huggingface-space/ to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Configure git
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+          # Clone the HF Space repo
+          git clone https://user:$HF_TOKEN@huggingface.co/spaces/harshal9657/HireOS hf-space
+
+          # Remove old files (except .git)
+          cd hf-space
+          find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
+
+          # Copy fresh files from huggingface-space/
+          cp -r ../huggingface-space/* .
+          cp -r ../huggingface-space/.* . 2>/dev/null || true
+
+          # Commit and push
+          git add -A
+          git diff --cached --quiet && echo "No changes to push" && exit 0
+          git commit -m "Sync from GitHub @ $(git -C .. rev-parse --short HEAD)"
+          git push

@@ -174,6 +174,10 @@ def extract_honeypot_flag_features(flags: list[str]) -> dict[str, float]:
     Centralises the repeated pattern of checking flag prefixes that was
     previously duplicated in ``features.py``, ``rank.py``, and ``app.py``.
 
+    Only **hard** flags count toward ``honeypot_flag_count``.  Soft
+    signals (``SKILL_NOT_ENTAILED``, ``FICTIONAL_COMPANY``) are excluded
+    because they are dataset noise, not honeypot indicators.
+
     Parameters
     ----------
     flags : list[str]
@@ -185,8 +189,23 @@ def extract_honeypot_flag_features(flags: list[str]) -> dict[str, float]:
         Feature dict with keys ``honeypot_flag_count``,
         ``has_fictional_company``, and ``has_maturity_impossible``.
     """
+    # Only count genuinely adversarial hard flags — not soft signals
+    _HARD_FLAG_PREFIXES = (
+        HoneypotCategory.TIMELINE_IMPOSSIBLE.value,
+        HoneypotCategory.MATURITY_IMPOSSIBLE.value,
+        HoneypotCategory.HEAVY_OVERLAP_TIMELINE.value,
+        HoneypotCategory.KEYWORD_STUFFER.value,
+        HoneypotCategory.SUSPICIOUS_JUNIOR.value,
+        HoneypotCategory.SEMANTIC_CONTRADICTION.value,
+        "EXPERT_ZERO_DURATION",
+    )
+    hard_flag_count = sum(
+        1 for f in flags
+        if any(f.startswith(prefix) for prefix in _HARD_FLAG_PREFIXES)
+    )
+
     return {
-        "honeypot_flag_count": float(len(flags)),
+        "honeypot_flag_count": float(hard_flag_count),
         "has_fictional_company": (
             1.0
             if any(f.startswith(HoneypotCategory.FICTIONAL_COMPANY.value) for f in flags)

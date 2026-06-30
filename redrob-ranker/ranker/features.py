@@ -255,10 +255,33 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
     # Specific skill category flags -- compute joined text once
     all_skills_text = " ".join(skill_names_lower)
 
-    has_embedding_skills = 1.0 if any(
-        term in all_skills_text
-        for term in ("sentence-transformer", "sentence transformer", "bge", "e5",
-                      "embedding", "word2vec", "dense retrieval")
+    # --- Python detection (Fix: 17% → 70%+) ---
+    # Many candidates express Python implicitly through frameworks
+    _python_implicit_terms = (
+        "pytorch", "fastapi", "django", "flask", "pandas",
+        "numpy", "scipy", "scikit-learn", "sklearn", "pyspark",
+        "jupyter", "notebook", "pip", "conda", "celery",
+        "pytest", "uvicorn", "gunicorn", "streamlit",
+    )
+    has_python = 1.0 if (
+        "python" in all_skills_text or
+        any(term in all_skills_text for term in _python_implicit_terms) or
+        "python" in career_text
+    ) else 0.0
+
+    # --- Embedding skills detection ---
+    has_embedding_skills = 1.0 if (
+        any(
+            term in all_skills_text
+            for term in ("sentence-transformer", "sentence transformer", "bge", "e5",
+                          "embedding", "word2vec", "dense retrieval", "doc2vec",
+                          "fasttext", "glove")
+        ) or any(
+            term in career_text
+            for term in ("sentence-transformer", "sentence transformer",
+                          "embedding", "word2vec", "dense retrieval",
+                          "text embedding", "vector embedding")
+        )
     ) else 0.0
 
     has_vector_db_skills = 1.0 if any(
@@ -267,16 +290,42 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
                       "chroma", "vector database", "vector db")
     ) else 0.0
 
-    has_evaluation_skills = 1.0 if any(
-        term in all_skills_text
-        for term in ("ndcg", "mrr", "map", "a/b testing", "ab testing",
-                      "evaluation", "ranking metric")
+    # --- Evaluation metrics detection (Fix: 0% → 10%+) ---
+    # Use precise terms to avoid false positives from the common word "map".
+    # Search BOTH skill names AND career text (many candidates describe
+    # evaluation competence in job descriptions, not as discrete skills).
+    _eval_terms_skills = (
+        "ndcg", "mrr", "a/b testing", "ab testing",
+        "model evaluation", "ranking metric", "evaluation metric",
+        "precision recall", "f1 score", "f1-score", "auc", "roc",
+        "mean average precision", "bleu", "rouge",
+    )
+    _eval_terms_career = (
+        "ndcg", "mrr", "mean average precision",
+        "a/b test", "ab test", "evaluation framework",
+        "model evaluation", "ranking evaluation",
+        "precision@", "recall@", "f1-score", "f1 score",
+        "bleu score", "rouge score", "model metric",
+        "offline evaluation", "online evaluation",
+    )
+    has_evaluation_skills = 1.0 if (
+        any(term in all_skills_text for term in _eval_terms_skills) or
+        any(term in career_text for term in _eval_terms_career)
     ) else 0.0
 
-    has_nlp_ir_skills = 1.0 if any(
-        term in all_skills_text
-        for term in ("nlp", "natural language", "information retrieval",
-                      "search", "retrieval", "bert", "transformers")
+    # --- NLP / IR detection (expanded to career text) ---
+    has_nlp_ir_skills = 1.0 if (
+        any(
+            term in all_skills_text
+            for term in ("nlp", "natural language", "information retrieval",
+                          "search", "retrieval", "bert", "transformers")
+        ) or any(
+            term in career_text
+            for term in ("natural language processing", "nlp pipeline",
+                          "information retrieval", "text classification",
+                          "named entity", "sentiment analysis",
+                          "text mining", "search relevance")
+        )
     ) else 0.0
 
     has_llm_skills = 1.0 if any(
@@ -299,6 +348,7 @@ def extract_skill_features(candidate: dict[str, Any]) -> dict[str, float]:
         "has_evaluation_skills": has_evaluation_skills,
         "has_nlp_ir_skills": has_nlp_ir_skills,
         "has_llm_skills": has_llm_skills,
+        "has_python": has_python,
         "total_skill_count": float(len(skills)),
     }
 

@@ -92,6 +92,25 @@ def main() -> None:
                 X[row_out, j] = 0.0
 
     print(f"\nTraining data: X={X.shape}, y={y.shape}")
+
+    # Log-transform highly skewed behavioral features to reduce dominance.
+    # These features have extreme variance (e.g. saved_by_recruiters_30d
+    # range 0-50+) vs binary features (0/1), causing tree-based models to
+    # over-rely on them for splits.  log(1+x) compresses high values while
+    # preserving zeros and relative ordering.
+    SKEWED_FEATURES = {
+        "saved_by_recruiters_30d", "profile_views_30d",
+        "search_appearance_30d", "applications_30d",
+        "connection_score", "endorsement_score",
+    }
+    transformed = []
+    for j, col in enumerate(feature_columns):
+        if col in SKEWED_FEATURES:
+            X[:, j] = np.log1p(X[:, j])
+            transformed.append(col)
+    if transformed:
+        print(f"  Log-transformed {len(transformed)} skewed features: {transformed}")
+
     print(f"  Label distribution: min={y.min():.1f}, max={y.max():.1f}, "
           f"mean={y.mean():.2f}, std={y.std():.2f}")
 
@@ -127,20 +146,30 @@ def main() -> None:
         free_raw_data=False,
     )
 
-    # LambdaMART parameters
+    # LambdaMART parameters — DART boosting to combat feature dominance.
+    #
+    # The previous GBDT config caused 79% feature importance on a single
+    # behavioral feature (saved_by_recruiters_30d).  DART (Dropouts meet
+    # Multiple Additive Regression Trees) randomly drops previously-built
+    # trees, preventing early behavioral splits from dominating.
+    # Combined with aggressive feature_fraction, this ensures skill and
+    # title features receive substantial gradient updates.
     params = {
         "objective": "lambdarank",
         "metric": "ndcg",
         "ndcg_eval_at": [10, 50, 100],
+        "boosting_type": "dart",           # Dropout on trees — prevents early-tree dominance
         "learning_rate": args.lr,
-        "max_depth": args.max_depth,
-        "num_leaves": 2 ** args.max_depth - 1,
-        "min_child_samples": 10,
-        "feature_fraction": 0.8,
+        "max_depth": 4,                    # Shallower trees prevent behavioral overfitting
+        "num_leaves": 15,                  # Constrained leaf count
+        "min_child_samples": 50,           # Require more samples per leaf for robustness
+        "feature_fraction": 0.65,          # Drop 35% of features per tree (was 0.8)
         "bagging_fraction": 0.8,
         "bagging_freq": 5,
-        "lambda_l1": 0.1,
-        "lambda_l2": 0.1,
+        "lambda_l1": 0.5,                  # Stronger L1 regularization (was 0.1)
+        "lambda_l2": 0.5,                  # Stronger L2 regularization (was 0.1)
+        "max_drop": 10,                    # DART: max trees dropped per iteration
+        "skip_drop": 0.5,                  # DART: 50% chance to skip dropout (stabilizes)
         "verbose": 1,
     }
 

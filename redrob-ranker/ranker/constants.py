@@ -455,6 +455,27 @@ JD_BM25_KEYWORDS: str = (
     "Python PyTorch deployment evaluation NDCG"
 )
 
+# Rich JD text for cross-encoder reranking (more context = better attention)
+JD_FULL_TEXT: str = (
+    "Senior AI Engineer — Founding Team at Redrob AI, a Series A AI-native "
+    "talent intelligence platform. Location: Pune/Noida, India (Hybrid). "
+    "Experience: 5-9 years. Building the intelligence layer: ranking, "
+    "retrieval, and matching systems. "
+    "Must have production experience with embeddings-based retrieval "
+    "(sentence-transformers, BGE, E5), vector databases or hybrid search "
+    "(Pinecone, Weaviate, Qdrant, Milvus, FAISS), strong Python, "
+    "and hands-on experience designing evaluation frameworks for ranking "
+    "systems (NDCG, MRR, MAP, A/B testing). "
+    "Nice to have: LLM fine-tuning (LoRA, QLoRA), learning-to-rank models, "
+    "HR-tech or marketplace experience, distributed systems. "
+    "Do NOT want: title chasers, framework enthusiasts, only-consulting "
+    "careers (TCS, Infosys, Wipro), primary CV/Speech/Robotics without "
+    "NLP/IR exposure. "
+    "India-based preferred (Pune, Noida, Hyderabad, Mumbai, Delhi NCR). "
+    "Sub-30-day notice period preferred. Looking for a shipper over a "
+    "researcher — someone who builds, deploys, and iterates in production."
+)
+
 # ---------------------------------------------------------------------------
 # Pipeline configuration (replaces scattered magic numbers)
 # ---------------------------------------------------------------------------
@@ -466,7 +487,7 @@ class PipelineConfig:
 
     k_dense: int = 5000
     k_sparse: int = 500
-    top_n_for_pruning: int = 300
+    top_n_for_pruning: int = 500
     final_output_size: int = 100
     dense_weight: float = 0.7
     sparse_weight: float = 0.3
@@ -499,17 +520,17 @@ class ScoringWeights:
     availability: float = 0.07
     location: float = 0.06
 
-    # Core-fit sub-weights
-    title_weight: float = 0.22
-    yoe_weight: float = 0.18
-    skill_match_weight: float = 0.15
-    skill_quality_weight: float = 0.25
-    company_weight: float = 0.20
+    # Core-fit sub-weights (skill-first: match + quality = 53%)
+    title_weight: float = 0.15
+    yoe_weight: float = 0.14
+    skill_match_weight: float = 0.25
+    skill_quality_weight: float = 0.28
+    company_weight: float = 0.18
 
     # Penalty thresholds
     honeypot_penalty: float = 0.95
-    maturity_impossible_penalty: float = 0.20
-    fictional_company_penalty: float = 0.30
+    maturity_impossible_penalty: float = 0.08
+    fictional_company_penalty: float = 0.0  # disabled — ~82% of dataset has fictional companies
     keyword_stuffer_penalty: float = 0.25
     all_consulting_penalty: float = 0.08
     title_chaser_penalty: float = 0.05

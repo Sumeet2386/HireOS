@@ -103,6 +103,10 @@ def load_id_mapping(mapping_path: str | Path) -> dict[int, str]:
 def _normalize_scores(scores: np.ndarray) -> np.ndarray:
     """Normalize scores to [0, 1] using min-max scaling.
 
+    Used to produce normalized feature values for downstream scoring
+    (``cosine_similarity_jd``, ``bm25_score_jd``).  No longer used for
+    fusion -- see :func:`hybrid_recall` which now uses RRF.
+
     Parameters
     ----------
     scores : np.ndarray
@@ -118,6 +122,13 @@ def _normalize_scores(scores: np.ndarray) -> np.ndarray:
     if max_s - min_s < 1e-9:
         return np.zeros_like(scores)
     return (scores - min_s) / (max_s - min_s)
+
+
+# Reciprocal Rank Fusion smoothing constant.
+# k=60 is the empirically established default across IR benchmarks
+# (Cormack et al., 2009).  Higher values flatten rank differences;
+# lower values amplify top-rank contributions.
+RRF_K: int = 60
 
 
 def dense_recall(
@@ -192,6 +203,21 @@ def hybrid_recall(
 ) -> list[tuple[str, float, float]]:
     """Hybrid recall combining FAISS dense + BM25 sparse retrieval.
 
+    Uses **Reciprocal Rank Fusion (RRF)** instead of min-max
+    normalization for score combination.  RRF is rank-based rather
+    than score-based, providing:
+
+    - Complete distribution agnosticism (dense and sparse score
+      distributions need not be comparable).
+    - Outlier immunity (a keyword-stuffed candidate with an extreme
+      BM25 score cannot compress other candidates' scores).
+    - Consensus reward (candidates appearing in the top ranks of
+      *both* retrieval lists are naturally promoted).
+
+    The original min-max normalized scores are still preserved in the
+    returned tuples for use as downstream feature columns
+    (``cosine_similarity_jd``, ``bm25_score_jd``).
+
     Parameters
     ----------
     jd_embedding : np.ndarray
@@ -209,52 +235,70 @@ def hybrid_recall(
     k_sparse : int
         Number of BM25 results.
     dense_weight : float
-        Weight for dense scores in final combination.
+        Legacy parameter (kept for API compatibility). Not used by RRF.
     sparse_weight : float
-        Weight for sparse scores in final combination.
+        Legacy parameter (kept for API compatibility). Not used by RRF.
 
     Returns
     -------
     list[tuple[str, float, float]]
-        List of ``(candidate_id, dense_score, sparse_score)`` sorted by
-        combined weighted score descending. Union of both retrieval sets.
+        List of ``(candidate_id, dense_score_norm, sparse_score_norm)``
+        sorted by RRF score descending.  Union of both retrieval sets.
     """
-    # Dense retrieval
+    # -- Dense retrieval --
     dense_scores, dense_indices = dense_recall(jd_embedding, faiss_index, k_dense)
     dense_norm = _normalize_scores(dense_scores)
 
-    # Sparse retrieval
+    # -- Sparse retrieval --
     sparse_scores, sparse_indices = sparse_recall(jd_text, bm25_index, k_sparse)
     sparse_norm = _normalize_scores(sparse_scores)
 
-    # Build score dictionaries keyed by row index
-    dense_dict: dict[int, float] = {}
+    # Build normalized-score dicts for downstream feature use
+    dense_norm_dict: dict[int, float] = {}
     for idx, score in zip(dense_indices.tolist(), dense_norm.tolist()):
         if idx >= 0:  # FAISS returns -1 for invalid
-            dense_dict[idx] = score
+            dense_norm_dict[idx] = score
 
-    sparse_dict: dict[int, float] = {}
+    sparse_norm_dict: dict[int, float] = {}
     for idx, score in zip(sparse_indices.tolist(), sparse_norm.tolist()):
-        sparse_dict[idx] = score
+        sparse_norm_dict[idx] = score
 
-    # Union of both sets
-    all_indices = set(dense_dict.keys()) | set(sparse_dict.keys())
+    # Build rank dicts for RRF (1-indexed: position 0 → rank 1)
+    dense_rank: dict[int, int] = {}
+    for rank_pos, idx in enumerate(dense_indices.tolist()):
+        if idx >= 0:
+            dense_rank[idx] = rank_pos + 1
+
+    sparse_rank: dict[int, int] = {}
+    for rank_pos, idx in enumerate(sparse_indices.tolist()):
+        sparse_rank[idx] = rank_pos + 1
+
+    # -- RRF fusion --
+    # RRF(d) = Σ_r  1 / (k + rank_r(d))
+    # Candidates only in one list get a single RRF term.
+    all_indices = set(dense_rank.keys()) | set(sparse_rank.keys())
 
     results = []
     for idx in all_indices:
-        d_score = dense_dict.get(idx, 0.0)
-        s_score = sparse_dict.get(idx, 0.0)
-        combined = dense_weight * d_score + sparse_weight * s_score
-        cand_id = id_mapping.get(idx, f"UNKNOWN_{idx}")
-        results.append((cand_id, d_score, s_score, combined))
+        rrf_score = 0.0
+        if idx in dense_rank:
+            rrf_score += 1.0 / (RRF_K + dense_rank[idx])
+        if idx in sparse_rank:
+            rrf_score += 1.0 / (RRF_K + sparse_rank[idx])
 
-    # Sort by combined score descending
-    results.sort(key=lambda x: -x[3])
+        cand_id = id_mapping.get(idx, f"UNKNOWN_{idx}")
+        d_norm = dense_norm_dict.get(idx, 0.0)
+        s_norm = sparse_norm_dict.get(idx, 0.0)
+        results.append((cand_id, d_norm, s_norm, rrf_score))
+
+    # Sort by RRF score descending, break ties by candidate_id
+    results.sort(key=lambda x: (-x[3], x[0]))
 
     logger.info(
-        "Hybrid recall: %d dense + %d sparse = %d unique candidates",
-        len(dense_dict),
-        len(sparse_dict),
+        "Hybrid recall (RRF k=%d): %d dense + %d sparse = %d unique candidates",
+        RRF_K,
+        len(dense_rank),
+        len(sparse_rank),
         len(all_indices),
     )
 

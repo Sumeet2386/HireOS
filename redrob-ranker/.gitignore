@@ -31,3 +31,11 @@ secret*
 # Artifacts (large files, regenerate via precompute/)
 # Uncomment if you don't want to track them:
 # artifacts/
+
+# Temp evaluation/debug output
+eval_output.txt
+*.log
+
+# HF Spaces deploy (separate git repo)
+hf-deploy/
+

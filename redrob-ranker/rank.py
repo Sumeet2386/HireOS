@@ -35,11 +35,12 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from ranker.constants import JD_BM25_KEYWORDS, PIPELINE_CONFIG as CFG
+from ranker.constants import JD_BM25_KEYWORDS, JD_FULL_TEXT, PIPELINE_CONFIG as CFG
 from ranker.features import extract_all_features
 from ranker.honeypot import detect_honeypot
 from ranker.ltr import fallback_weighted_scoring
 from ranker.reasoning import generate_reasoning
+from ranker.reranker import load_precomputed_scores, rerank_candidates
 from ranker.utils import extract_honeypot_flag_features, load_candidates
 from ranker.validator import validate_submission
 
@@ -122,6 +123,12 @@ def load_artifacts(artifacts_dir: Path) -> dict:
             len(feature_cols),
         )
 
+    # Cross-encoder precomputed scores (optional)
+    ce_scores_path = artifacts_dir / "cross_encoder_scores.json"
+    ce_scores = load_precomputed_scores(ce_scores_path)
+    if ce_scores:
+        artifacts["cross_encoder_scores"] = ce_scores
+
     elapsed = time.time() - t0
     logger.info("Artifacts loaded in %.1fs", elapsed)
 
@@ -146,9 +153,11 @@ def _enrich_honeypot_features(
         feats["is_honeypot"] = new_hp
         enriched = 1
 
-    # Never reduce flag counts -- take the maximum of precomputed vs live
+    # REPLACE precomputed honeypot features with fresh live values.
+    # The precomputed values in features.parquet may be stale (from old
+    # honeypot logic that inflated flag counts with soft signals).
     for key, value in flag_features.items():
-        feats[key] = max(feats.get(key, 0.0), value)
+        feats[key] = value
 
     return enriched
 
@@ -215,13 +224,18 @@ def run_pipeline(
         sparse_scores = {}
         logger.info("No recall artifacts. Scoring all %s candidates.", f"{len(recalled_ids):,}")
 
-    # Build feature vectors for recalled candidates
+    # Build feature vectors for recalled candidates.
+    # ALWAYS prefer live extraction when raw candidate data is available,
+    # so that improved skill detection (Python, evaluation, etc.) applies.
+    # Fall back to precomputed only when raw data is unavailable.
     candidate_features: dict[str, dict[str, float]] = {}
+    live_extracted = 0
     for cid in recalled_ids:
-        if cid in precomputed:
-            features = dict(precomputed[cid])
-        elif cid in candidates_by_id:
+        if cid in candidates_by_id:
             features = extract_all_features(candidates_by_id[cid])
+            live_extracted += 1
+        elif cid in precomputed:
+            features = dict(precomputed[cid])
         else:
             continue
 
@@ -230,6 +244,8 @@ def run_pipeline(
         features["bm25_score_jd"] = sparse_scores.get(cid, 0.0)
 
         candidate_features[cid] = features
+
+    logger.info("Live-extracted features for %d/%d candidates", live_extracted, len(candidate_features))
 
     # Enrich precomputed features with live honeypot checks
     enriched = 0
@@ -295,6 +311,25 @@ def run_pipeline(
 
     final = final[:CFG.final_output_size]
     logger.info("Final: %d candidates after pruning, in %.1fs", len(final), time.time() - t4)
+
+    # -- Stage 4.5: Cross-encoder reranking --
+    ce_scores = artifacts.get("cross_encoder_scores")
+    if ce_scores or "faiss_index" in artifacts:
+        logger.info("[Stage 4.5] Cross-encoder reranking...")
+        t45 = time.time()
+        final = rerank_candidates(
+            jd_text=JD_FULL_TEXT,
+            candidate_pool=final,
+            candidates_by_id=candidates_by_id,
+            precomputed_scores=ce_scores,
+            top_k=CFG.final_output_size,
+            rerank_depth=min(150, len(final)),
+        )
+        logger.info(
+            "Cross-encoder reranking complete in %.1fs (%s mode)",
+            time.time() - t45,
+            "precomputed" if ce_scores else "live",
+        )
 
     # -- Stage 5: Score normalization + reasoning generation --
     logger.info("[Stage 5] Score normalization + reasoning generation...")
