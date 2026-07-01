@@ -67,9 +67,9 @@ Given a job description for a Senior AI Engineer (Founding Team) and 100,000 can
                           submission.csv
 ```
 
-**Single-command execution**:
+**Single-command execution** (from repository root):
 ```bash
-python rank.py --candidates ./candidates.jsonl --out ./submission.csv
+cd redrob-ranker && python rank.py --candidates ../candidates.jsonl --out ../submission.csv
 ```
 
 ---
@@ -357,6 +357,7 @@ No AI tools or external services are invoked during the ranking inference step. 
 | Harshal Andhale | AI/ML Engineer and Ranking Architect |
 | Sumeet Gite | Data Engineer and Backend Developer |
 | Prem More | LLM, Evaluation, and DevOps Engineer |
+| Soham Ingole | Backend & Documentation |
 
 ---
 

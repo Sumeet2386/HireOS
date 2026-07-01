@@ -1,0 +1,31 @@
+# Redrob AI Candidate Ranking System — Dependencies
+# ================================================
+
+# Core data handling
+numpy>=1.24.0
+pyarrow>=14.0.0
+
+# Embedding model
+sentence-transformers>=2.2.0
+torch>=2.0.0
+onnxruntime>=1.16.0
+
+# FAISS vector search
+faiss-cpu>=1.7.4
+
+# BM25 sparse retrieval
+rank-bm25>=0.2.2
+
+# LightGBM for Learning-to-Rank
+lightgbm>=4.0.0
+scipy>=1.10.0
+
+# SLM reasoning (optional — CPU inference)
+llama-cpp-python>=0.2.0
+
+# Weak label generation (precompute only)
+openai>=1.0.0
+
+# Utilities
+tqdm>=4.65.0
+huggingface_hub>=0.20.0

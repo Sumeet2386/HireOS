@@ -33,7 +33,7 @@ github_repo: "https://github.com/Sumeet2386/HireOS"
 
 sandbox_link: "https://huggingface.co/spaces/harshal9657/HireOS"
 
-reproduce_command: "python rank.py --candidates ./candidates.jsonl --out ./submission.csv --artifacts artifacts"
+reproduce_command: "cd redrob-ranker && python rank.py --candidates ../candidates.jsonl --out ../submission.csv"
 
 # ============================================================================
 # Compute environment
