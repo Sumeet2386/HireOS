@@ -19,7 +19,8 @@ A **hybrid retrieval + ML re-ranking pipeline** with adversarial honeypot detect
   300 candidates
     ↓ Stage 3: 6-layer honeypot pruning
  ~100 candidates
-    ↓ Stage 4: Rule-based reasoning generation
+    ↓ Stage 4.5: Cross-encoder reranking
+    ↓ Stage 5: Rule-based reasoning generation
   Final ranked CSV
 ```
 
@@ -135,7 +136,8 @@ This will download the expected contents into `artifacts/`:
 | `embeddings.npy` | 154 MB | 100K × 384 candidate embeddings |
 | `candidate_texts.parquet` | 69 MB | Synthesized candidate text documents |
 | `features.parquet` | 3.4 MB | 100K × 50 pre-computed features |
-| `id_mapping.json` | 2.5 MB | Row index → candidate_id mapping |
+| `id_mapping.json` | 2.5 MB | Row index to candidate_id mapping |
+| `cross_encoder_scores.json` | 20 KB | Pre-computed cross-encoder pairwise scores |
 | `weak_labels.json` | 388 KB | GPT-4o-mini weak labels (2K samples) |
 | `lgbm_ltr_model.bin` | 18 KB | Trained LightGBM LambdaMART model |
 | `jd_embedding.npy` | 1.6 KB | JD query embedding (384-dim) |
@@ -206,7 +208,11 @@ docker run -v /path/to/data:/data -v /path/to/output:/output redrob-ranker
 
 A candidate triggers honeypot status if ≥2 distinct check categories fire.
 
-### Stage 4: Reasoning Generation
+### Stage 4.5: Cross-Encoder Reranking
+
+The clean top 100 candidates undergo a final cross-encoder reranking pass. This blends the original multi-signal score (40% weight) with a high-fidelity semantic score (60% weight) to ensure the very top candidates have the absolute strongest semantic alignment with the job description.
+
+### Stage 5: Reasoning Generation
 
 **Rule-based template** generating 2-sentence assessments per candidate:
 - Sentence 1: Positive signals (title, YoE, top skills, company type, engagement)
@@ -231,8 +237,8 @@ All facts are directly extracted from the candidate record — no hallucination 
 
 ## 🤖 AI Tools Used
 
-- **Gemini (Antigravity IDE)**: Architecture planning, code scaffolding, competitive analysis
-- **GPT-4o-mini**: Weak label generation during offline pre-computation only (2,000 candidates × $0.15/1M tokens ≈ $1.50)
+- **Gemini**: Architecture planning, code scaffolding, competitive analysis (Antigravity IDE)
+- **ChatGPT (GPT-4o-mini)**: Weak label generation during offline pre-computation only (2,000 candidates x $0.15/1M tokens ≈ $1.50)
 
 No AI tools or network access used during inference runtime.
 
