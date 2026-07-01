@@ -338,14 +338,21 @@ def run_pipeline(
     n = len(final)
     score_span = CFG.score_range_max - CFG.score_range_min  # 0.80
 
+    # Extract min/max from actual model outputs for normalization
+    if n > 0:
+        max_raw = max(score for _, score in final)
+        min_raw = min(score for _, score in final)
+        raw_span = max_raw - min_raw if max_raw > min_raw else 1.0
+    else:
+        max_raw, min_raw, raw_span = 1.0, 0.0, 1.0
+
     results = []
     for rank_idx, (cid, raw_score) in enumerate(final):
         rank = rank_idx + 1
 
-        # Power curve: t^0.7 gives more spread at the top, less at the bottom
+        # Map genuine model raw_score to [CFG.score_range_min, CFG.score_range_max]
         if n > 1:
-            t = rank_idx / (n - 1)  # 0.0 to 1.0
-            normalized_score = round(CFG.score_range_max - score_span * (t ** CFG.score_curve_exponent), 4)
+            normalized_score = round(CFG.score_range_min + score_span * ((raw_score - min_raw) / raw_span), 4)
         else:
             normalized_score = CFG.score_range_max
 

@@ -93,7 +93,7 @@ def run_ranking(file_obj, top_n, use_precomputed):
         details = (
             f"Mode: {mode}\n"
             f"Source: team_Discern.csv ({len(PRECOMPUTED)} ranked candidates)\n\n"
-            "Full pipeline: FAISS → BM25 → LightGBM LambdaMART → Honeypot pruning → Reasoning"
+            "Full pipeline: FAISS → BM25 → Multi-signal weighted scoring → Honeypot pruning → Reasoning"
         )
 
     # ── Live pipeline path ──
@@ -125,11 +125,21 @@ def run_ranking(file_obj, top_n, use_precomputed):
         pruned = len(ranked) - len(clean)
         final = clean[:min(top_n, 100)]
 
-        results = []
         n = len(final)
-        for i, (cid, _) in enumerate(final):
+        if n > 0:
+            max_raw = max(s for _, s in final)
+            min_raw = min(s for _, s in final)
+            raw_span = max_raw - min_raw if max_raw > min_raw else 1.0
+        else:
+            max_raw, min_raw, raw_span = 1.0, 0.0, 1.0
+
+        results = []
+        for i, (cid, raw_score) in enumerate(final):
             rank = i + 1
-            score = round(1.0 - 0.80 * ((i / max(n - 1, 1)) ** 0.7), 4) if n > 1 else 1.0
+            if n > 1:
+                score = round(0.20 + 0.80 * ((raw_score - min_raw) / raw_span), 4)
+            else:
+                score = 1.0
             cand = candidates_by_id.get(cid)
             reason = generate_reasoning(cand, rank, score,
                                         features=candidate_features.get(cid)) if cand else ""
@@ -222,7 +232,7 @@ with demo:
 
 1. **Recall** — FAISS dense retrieval (bge-small-en-v1.5) + BM25 sparse retrieval
 2. **Features** — 50+ signals: structural, skill, behavioral, location
-3. **Re-ranking** — LightGBM LambdaMART trained on GPT-4o-mini weak labels
+3. **Re-ranking** — Deterministic multi-signal weighted scoring formula (LightGBM available but substituted for interpretability)
 4. **Honeypot pruning** — 6-layer adversarial detection (timeline, entailment, maturity, overlap, stuffer, junior)
 5. **Reasoning** — Deterministic, fact-grounded, 2-sentence assessment per candidate
 

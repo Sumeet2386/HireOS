@@ -15,7 +15,7 @@ A **hybrid retrieval + ML re-ranking pipeline** with adversarial honeypot detect
               + BM25 sparse recall (top 500)
 ~5,000 candidates
     ↓ Stage 2: 50-feature engineering
-              + LightGBM LambdaMART re-ranking
+              + Multi-signal weighted scoring
   300 candidates
     ↓ Stage 3: 6-layer honeypot pruning
  ~100 candidates
@@ -191,7 +191,7 @@ docker run -v /path/to/data:/data -v /path/to/output:/output redrob-ranker
 | Location | 5 | India flag, Tier-1 city, relocation willingness, work mode |
 | Honeypot | 2 | Is honeypot flag, flag count |
 
-**LightGBM LambdaMART** re-ranking model trained on GPT-4o-mini weak labels (2,000 stratified candidates scored on 0-10 relevance scale).
+**Deterministic multi-signal weighted scoring formula** (a LightGBM LambdaMART model was trained on GPT-4o-mini weak labels but abandoned in favor of the interpretable formula).
 
 ### Stage 3: Honeypot Pruning (300 → ~100)
 
@@ -221,7 +221,7 @@ All facts are directly extracted from the candidate record — no hallucination 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Embedding model | `bge-small-en-v1.5` (384d) | Best quality/speed tradeoff for CPU inference |
-| LTR model | LightGBM LambdaMART | Gold standard for CPU-efficient learning-to-rank; directly optimizes NDCG |
+| Scorer | Weighted Formula | Chosen over LightGBM to guarantee interpretability and prevent feature dominance |
 | Weak labels | GPT-4o-mini (2K samples) | Cost-effective ($1.50) teacher for distillation |
 | Reasoning | Rule-based templates | Guaranteed factual accuracy; no hallucination risk |
 | Recall strategy | FAISS + BM25 hybrid | Dense catches semantic matches; sparse catches keyword matches |

@@ -68,7 +68,8 @@ _FIT_OPENERS_TIER3 = [
 _CONCERN_INTROS = [
     "Key consideration:", "Notable concern:", "Worth noting:",
     "Area of attention:", "Potential friction:",
-    "Risk factor:", "Point of caution:",
+    "Risk factor:", "Point of caution:", "Observation:",
+    "Primary gap:", "Limitation to consider:", "Flag:",
 ]
 
 _NO_CONCERN_PHRASES = [
@@ -341,7 +342,15 @@ def build_template_reasoning(
         # Add high-signal skill callout for top candidates
         if high_signal:
             hs_str = " and ".join(high_signal[:2])
-            sentence1 = f"{opener} {sentence1} Direct experience with {hs_str} aligns precisely with the JD's core technical requirements."
+            align_phrases = [
+                "aligns precisely with the JD's core technical requirements.",
+                "is a direct match for the project's technical stack.",
+                "satisfies the primary technical qualifications sought for this role.",
+                "demonstrates the exact technical depth requested by the hiring team.",
+                "provides the specific domain expertise needed for this position.",
+            ]
+            align = _seed_choice(align_phrases, cid, "align")
+            sentence1 = f"{opener} {sentence1} Direct experience with {hs_str} {align}"
         else:
             sentence1 = f"{opener} {sentence1}"
 
@@ -349,11 +358,14 @@ def build_template_reasoning(
     concerns = []
 
     if notice_days > 90:
-        concerns.append(f"{notice_days}-day notice period poses scheduling friction")
+        long_np = [f"{notice_days}-day notice period poses scheduling friction", f"extended availability timeline ({notice_days} days)", f"lengthy notice period of {notice_days} days"]
+        concerns.append(_seed_choice(long_np, cid, "np90"))
     elif notice_days > 60:
-        concerns.append(f"moderate {notice_days}-day notice period")
+        med_np = [f"moderate {notice_days}-day notice period", f"{notice_days}-day timeline before joining", f"availability is {notice_days} days out"]
+        concerns.append(_seed_choice(med_np, cid, "np60"))
     elif notice_days > 30:
-        concerns.append(f"{notice_days}-day notice period (sub-30 preferred)")
+        short_np = [f"{notice_days}-day notice period (sub-30 preferred)", f"requires {notice_days} days to join", f"notice period exceeds ideal 30 days ({notice_days}d)"]
+        concerns.append(_seed_choice(short_np, cid, "np30"))
 
     if not _is_tier1_india(candidate):
         country = (profile.get("country") or "").lower()
@@ -388,7 +400,9 @@ def build_template_reasoning(
         concern_intro = _seed_choice(_CONCERN_INTROS, cid, "concern")
         if tier == 3:
             # More direct language for lower-ranked candidates
-            sentence2 = f"Ranked lower due to: {'; '.join(concerns)}."
+            t3_reasons = ["Ranked lower due to:", "Lower placement reflects:", "Pushed down the ranking by:", "Fell in rank owing to:", "Rank impacted by:"]
+            reason_intro = _seed_choice(t3_reasons, cid, "t3reason")
+            sentence2 = f"{reason_intro} {'; '.join(concerns)}."
         else:
             sentence2 = f"{concern_intro} {'; '.join(concerns)}."
     else:
