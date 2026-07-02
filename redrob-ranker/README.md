@@ -17,7 +17,7 @@ A **hybrid retrieval + ML re-ranking pipeline** with adversarial honeypot detect
     ↓ Stage 2: 50-feature engineering
               + Multi-signal weighted scoring
   300 candidates
-    ↓ Stage 3: 8-layer honeypot pruning
+    ↓ Stage 3: 9-layer honeypot pruning
  ~100 candidates
     ↓ Stage 4.5: Cross-encoder reranking
     ↓ Stage 5: Rule-based reasoning generation
@@ -37,7 +37,7 @@ redrob-ranker/
 │   ├── recall.py              #   FAISS + BM25 hybrid recall
 │   ├── features.py            #   50-feature engineering
 │   ├── ltr.py                 #   LightGBM LTR inference
-│   ├── honeypot.py            #   8-layer adversarial detection
+│   ├── honeypot.py            #   9-layer adversarial detection
 │   ├── reasoning.py           #   Hybrid rule-based reasoning
 │   ├── validator.py           #   Output CSV validation
 │   └── constants.py           #   Skill lists, consulting firms, city maps
@@ -197,7 +197,7 @@ docker run -v /path/to/data:/data -v /path/to/output:/output redrob-ranker
 
 ### Stage 3: Honeypot Pruning (300 → ~100)
 
-8-layer deterministic detection:
+9-layer deterministic detection:
 
 1. **Timeline impossibility** — career dates before graduation
 2. **Skill-text entailment failure** — advanced skills absent from career descriptions
@@ -207,6 +207,7 @@ docker run -v /path/to/data:/data -v /path/to/output:/output redrob-ranker
 6. **Suspicious junior profiles** — too-good-to-be-true signals for low YoE
 7. **Fictional company detection** — known trap company names (soft signal only)
 8. **Expert with zero duration** — expert proficiency in skills with 0 months used
+9. **Impossible company founding dates** — claimed start date before company existed
 
 A candidate triggers honeypot status if ≥3 distinct hard check categories fire.
 

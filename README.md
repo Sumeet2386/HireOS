@@ -56,7 +56,7 @@ Given a job description for a Senior AI Engineer (Founding Team) and 100,000 can
                                   |
                           top 300 candidates
                                   |
-                    6-Layer Honeypot Pruning
+                    9-Layer Honeypot Pruning
                     (timeline, entailment, maturity,
                      overlap, keyword-stuffing, junior)
                                   |
@@ -103,7 +103,7 @@ A multi-signal weighted scoring formula combines these features with tuned weigh
 
 ### Stage 3 — Honeypot Pruning (300 to 100)
 
-The dataset contains approximately 80 adversarial "honeypot" candidates with subtly impossible profiles. Six deterministic detection layers identify them:
+The dataset contains approximately 80 adversarial "honeypot" candidates with subtly impossible profiles. Nine deterministic detection layers identify them:
 
 1. **Timeline impossibility** — Career start dates that precede graduation dates, or claimed tenure exceeding the time since a company was founded.
 2. **Skill-text entailment failure** — "Expert" proficiency claims in skills that appear nowhere in career descriptions or project work.
@@ -111,6 +111,9 @@ The dataset contains approximately 80 adversarial "honeypot" candidates with sub
 4. **Career overlap detection** — Multiple concurrent full-time positions beyond what is realistically plausible.
 5. **Keyword stuffer detection** — Profiles listing extensive AI/ML skills alongside exclusively non-technical job titles (e.g., "HR Manager" with "expert" in 10 AI skills).
 6. **Suspicious junior profiles** — Candidates with very low years of experience but statistically improbable behavioral signals (e.g., extremely high recruiter save rates).
+7. **Fictional company detection** — known trap company names (soft signal only).
+8. **Expert with zero duration** — expert proficiency in skills with 0 months used.
+9. **Impossible company founding dates** — claimed start date before company existed.
 
 A candidate is flagged as a honeypot when two or more distinct detection categories trigger. This threshold balances precision (avoiding false positives among legitimate candidates) with recall (catching adversarial profiles).
 

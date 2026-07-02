@@ -74,9 +74,10 @@ methodology_summary: |
   covering structural (title/YoE/career), skill (AI core count, proficiency,
   entailment), behavioral (activity decay, response rate, notice period), and
   location signals. Stage 3: Deterministic multi-signal weighted formula (LightGBM
-  was trained but abandoned to maintain interpretability). Stage 4: 8-layer honeypot
+  was trained but abandoned to maintain interpretability). Stage 4: 9-layer honeypot
   pruning (timeline impossibility, skill-text entailment failure, tech maturity
-  validation, career overlap, keyword stuffer detection, suspicious junior profiles).
+  validation, career overlap, keyword stuffer detection, suspicious junior profiles, 
+  fictional company detection, expert with zero duration, impossible company founding dates).
   Stage 5: Deterministic rule-based reasoning per candidate. Runtime ~90s on
   CPU, 3.4MB feature matrix, 206MB BM25 index, ~150MB FAISS index.
 

@@ -24,7 +24,7 @@ Hybrid retrieval + ML re-ranking pipeline with adversarial honeypot detection:
 
 - **50+ features** across structural, skill, behavioral, and location dimensions
 - **Multi-signal scoring** — additive formula with data-driven weights
-- **6-layer honeypot pruning** — catches fake/impossible profiles
+- **9-layer honeypot pruning** — catches fake/impossible profiles
 - **Rule-based reasoning** — fact-grounded, no hallucination risk
 
 > This demo uses the fallback scoring path (no FAISS/BM25). The full pipeline with dense+sparse retrieval handles 100K candidates in ~90s on CPU.
