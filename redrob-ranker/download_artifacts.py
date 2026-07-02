@@ -38,6 +38,7 @@ EXPECTED_FILES = [
     "feature_columns.json",
     "feature_importance.json",
     "id_mapping.json",
+    "cross_encoder_scores.json",
     "index.faiss",
     "jd_embedding.npy",
     "lgbm_ltr_model.bin",

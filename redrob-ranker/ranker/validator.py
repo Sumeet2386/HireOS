@@ -121,6 +121,9 @@ def validate_submission(csv_path: str | Path) -> list[str]:
         if rank is not None and score is not None:
             by_rank.append((rank, score, cid))
 
+    if seen_ranks != set(range(1, EXPECTED_DATA_ROWS + 1)):
+        errors.append(f"All ranks from 1 to {EXPECTED_DATA_ROWS} must be present.")
+
     # Check monotonically non-increasing scores
     by_rank.sort(key=lambda x: x[0])
     for i in range(len(by_rank) - 1):

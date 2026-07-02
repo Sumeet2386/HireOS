@@ -54,6 +54,16 @@ _FIT_OPENERS_TIER1 = [
     "A top-tier match for this high-impact AI engineering role.",
     "Ideally positioned for the Senior AI Engineer position.",
     "An elite-caliber profile for the founding AI team.",
+    "A premier choice demonstrating comprehensive AI expertise.",
+    "Uniquely qualified for the Senior AI Engineer position.",
+    "Presents a highly compelling case for the role.",
+    "Exemplifies the ideal technical depth for this position.",
+    "A distinguished profile matching the JD's exact specifications.",
+    "Flawless alignment with the core engineering mandate.",
+    "A high-impact candidate with precise technical fit.",
+    "Embodies the precise skill set required for the founding team.",
+    "A prime candidate demonstrating exceptional technical maturity.",
+    "Perfectly suited for the technical demands of this role.",
 ]
 
 _FIT_OPENERS_TIER2 = [
@@ -85,6 +95,14 @@ _NO_CONCERN_PHRASES = [
     "Profile presents no notable risk factors.",
     "Consistently strong signals across technical and behavioral axes.",
     "Clean profile with no disqualifying factors detected.",
+]
+
+_NO_CONCERN_PHRASES_TIER3 = [
+    "While meeting baseline criteria, profile was outcompeted by higher-scoring candidates.",
+    "Competent profile, but lacks the elite differentiators of top-tier candidates.",
+    "Satisfies fundamental requirements but faces stiff competition in the applicant pool.",
+    "A viable profile that fell in rank relative to more specialized peers.",
+    "Meets the core job description but was surpassed by candidates with stronger AI-specific signals.",
 ]
 
 
@@ -489,7 +507,10 @@ def build_template_reasoning(
         else:
             sentence2 = f"{concern_intro} {'; '.join(concerns)}."
     else:
-        sentence2 = _seed_choice(_NO_CONCERN_PHRASES, cid, "noconcern")
+        if tier == 3:
+            sentence2 = _seed_choice(_NO_CONCERN_PHRASES_TIER3, cid, "noconcern_t3")
+        else:
+            sentence2 = _seed_choice(_NO_CONCERN_PHRASES, cid, "noconcern")
 
     # -- Tier 2 specific: add a balancing statement --
     if tier == 2 and not concerns:

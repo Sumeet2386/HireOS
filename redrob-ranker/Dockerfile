@@ -14,15 +14,17 @@ RUN apt-get update && \
 
 # Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --default-timeout=1000 --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY ranker/ ranker/
 COPY rank.py .
 
-# Copy download script and fetch artifacts from HuggingFace
-COPY download_artifacts.py .
-RUN python download_artifacts.py --out artifacts/
+# Pre-cache cross-encoder model to allow offline inference
+RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('mixedbread-ai/mxbai-rerank-xsmall-v1')"
+
+# Copy local pre-downloaded artifacts directly to bypass slow Docker networking
+COPY artifacts/ artifacts/
 
 # Default command: run ranking pipeline
 ENTRYPOINT ["python", "rank.py"]

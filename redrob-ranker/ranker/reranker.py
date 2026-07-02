@@ -250,8 +250,12 @@ def rerank_candidates(
             logger.warning("No candidates available for cross-encoder reranking")
             return pool[:top_k]
 
-        ce_results = rerank_with_cross_encoder(jd_text, live_candidates)
-        ce_scores = {cid: score for cid, score in ce_results}
+        try:
+            ce_results = rerank_with_cross_encoder(jd_text, live_candidates)
+            ce_scores = {cid: score for cid, score in ce_results}
+        except Exception as e:
+            logger.error("Cross-encoder failed (network isolated?): %s. Falling back to original scores.", e)
+            return pool[:top_k]
 
         # Normalize both score sets to [0, 1] for blending
         orig_scores = [s for _, s in pool]
