@@ -547,6 +547,32 @@ SCORING_WEIGHTS = ScoringWeights()
 # ---------------------------------------------------------------------------
 # Pre-built synonym reverse lookup (O(1) instead of O(n*m) per query)
 # ---------------------------------------------------------------------------
+COMPANY_FOUNDING_YEARS: dict[str, int] = {
+    "sarvam ai": 2023,
+    "krutrim": 2023,
+    "rephrase.ai": 2019,
+    "observe.ai": 2017,
+    "yellow.ai": 2016,
+    "niramai": 2016,
+    "wysa": 2015,
+    "locobuzz": 2015,
+    "verloop.io": 2015,
+    "zepto": 2021,
+    "anthropic": 2021,
+    "mistral": 2023,
+    "cohere": 2019,
+    "openai": 2015,
+    "hugging face": 2016,
+    "pinecone": 2019,
+    "qdrant": 2021,
+    "weaviate": 2019,
+    "glance": 2019,
+    "cred": 2018,
+}
+
+# ---------------------------------------------------------------------------
+# Pre-built synonym reverse lookup (O(1) instead of O(n*m) per query)
+# ---------------------------------------------------------------------------
 SYNONYM_REVERSE_LOOKUP: dict[str, set[str]] = {}
 
 for _key, _synonyms in SKILL_SYNONYMS.items():

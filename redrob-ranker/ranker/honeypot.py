@@ -33,6 +33,7 @@ from .constants import (
     REFERENCE_DATE,
     SYNONYM_REVERSE_LOOKUP,
     TECH_RELEASE_YEARS,
+    COMPANY_FOUNDING_YEARS,
 )
 from .utils import parse_date
 
@@ -470,6 +471,42 @@ def check_expert_zero_duration(candidate: dict[str, Any]) -> list[str]:
     return flags
 
 
+def check_company_founding_timeline(candidate: dict[str, Any]) -> list[str]:
+    """Check 9: Candidate claims to work at a company before it was founded.
+
+    E.g. Started working at Sarvam AI in 2020, but it was founded in 2023.
+
+    Parameters
+    ----------
+    candidate : dict
+        Full candidate JSON record.
+
+    Returns
+    -------
+    list[str]
+        List of flag strings.
+    """
+    flags: list[str] = []
+    career = candidate.get("career_history", [])
+
+    for job in career:
+        company = (job.get("company") or "").lower().strip()
+        start_date = job.get("start_date")
+        if start_date and company in COMPANY_FOUNDING_YEARS:
+            try:
+                start_year = int(start_date.split('-')[0])
+                founding_year = COMPANY_FOUNDING_YEARS[company]
+                if start_year < founding_year:
+                    flags.append(
+                        f"COMPANY_TIMELINE_IMPOSSIBLE: Started at {job.get('company', company)} "
+                        f"in {start_year}, but it was founded in {founding_year}"
+                    )
+            except (ValueError, TypeError, IndexError):
+                continue
+
+    return flags
+
+
 def detect_honeypot(
     candidate: dict[str, Any],
     threshold: int = 3,
@@ -500,6 +537,12 @@ def detect_honeypot(
     """
     all_flags: list[str] = []
     categories_triggered = 0
+
+    # Check 9: Impossible company founding dates (immediate fatal flag)
+    company_flags = check_company_founding_timeline(candidate)
+    if company_flags:
+        all_flags.extend(company_flags)
+        return True, all_flags
 
     # Check 1: Timeline (hard signal — only ≥3 year gaps)
     timeline_flags = check_timeline_impossibility(candidate)
