@@ -233,7 +233,7 @@ All facts are directly extracted from the candidate record — no hallucination 
 | Weak labels | GPT-4o-mini (2K samples) | Cost-effective ($1.50) teacher for distillation |
 | Reasoning | Rule-based templates | Guaranteed factual accuracy; no hallucination risk |
 | Recall strategy | FAISS + BM25 hybrid | Dense catches semantic matches; sparse catches keyword matches |
-| Honeypot threshold | ≥2 categories | Balances precision (avoid false positives) with recall |
+| Honeypot threshold | ≥3 categories | Balances precision (avoid false positives) with recall |
 
 ---
 
